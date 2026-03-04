@@ -102,6 +102,10 @@ export function GetHistoryStats() {
   return window['go']['main']['App']['GetHistoryStats']();
 }
 
+export function GetLogPath() {
+  return window['go']['main']['App']['GetLogPath']();
+}
+
 export function GetQueryBySlug(arg1) {
   return window['go']['main']['App']['GetQueryBySlug'](arg1);
 }

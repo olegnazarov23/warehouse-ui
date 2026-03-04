@@ -23,6 +23,7 @@ type AnthropicProvider struct {
 
 func (p *AnthropicProvider) Name() string         { return "anthropic" }
 func (p *AnthropicProvider) DefaultModel() string { return "claude-sonnet-4-20250514" }
+func (p *AnthropicProvider) MinModel() string     { return "claude-sonnet-4, claude-opus-4" }
 func (p *AnthropicProvider) IsConfigured() bool   { return p.apiKey != "" }
 
 func (p *AnthropicProvider) client() anthropic.Client {
@@ -60,15 +61,15 @@ func (p *AnthropicProvider) StreamChat(ctx context.Context, messages []Message, 
 		}
 	}
 
-	stream := c.Messages.NewStreaming(ctx, anthropic.MessageNewParams{
-		Model:     anthropic.Model(model),
-		MaxTokens: int64(4096),
+	params := anthropic.MessageNewParams{
+		Model: anthropic.Model(model),
 		System: []anthropic.TextBlockParam{
 			{Text: systemPrompt},
 		},
-		Messages:    anthropicMsgs,
-		Temperature: anthropic.Float(0.2),
-	})
+		Messages: anthropicMsgs,
+	}
+	applyAnthropicParams(&params, model)
+	stream := c.Messages.NewStreaming(ctx, params)
 	defer stream.Close()
 
 	for stream.Next() {
@@ -114,15 +115,15 @@ func (p *AnthropicProvider) Complete(ctx context.Context, messages []Message, sc
 		}
 	}
 
-	resp, err := c.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:     anthropic.Model(model),
-		MaxTokens: int64(4096),
+	params := anthropic.MessageNewParams{
+		Model: anthropic.Model(model),
 		System: []anthropic.TextBlockParam{
 			{Text: systemPrompt},
 		},
-		Messages:    anthropicMsgs,
-		Temperature: anthropic.Float(0.2),
-	})
+		Messages: anthropicMsgs,
+	}
+	applyAnthropicParams(&params, model)
+	resp, err := c.Messages.New(ctx, params)
 	if err != nil {
 		return "", fmt.Errorf("anthropic complete: %w", err)
 	}
@@ -134,4 +135,22 @@ func (p *AnthropicProvider) Complete(ctx context.Context, messages []Message, sc
 		}
 	}
 	return sb.String(), nil
+}
+
+// applyAnthropicParams sets optimal generation parameters based on model family.
+// Claude 4.x (opus/sonnet) supports extended thinking; older models use temperature tuning.
+func applyAnthropicParams(params *anthropic.MessageNewParams, model string) {
+	m := strings.ToLower(model)
+	switch {
+	case strings.Contains(m, "opus-4"), strings.Contains(m, "sonnet-4"):
+		// Claude 4.x: higher token limit, low temperature for precision
+		params.MaxTokens = int64(8192)
+		params.Temperature = anthropic.Float(0.2)
+		params.TopP = anthropic.Float(0.95)
+	default:
+		// Older models (claude-3.x, etc.)
+		params.MaxTokens = int64(4096)
+		params.Temperature = anthropic.Float(0.2)
+		params.TopP = anthropic.Float(0.95)
+	}
 }

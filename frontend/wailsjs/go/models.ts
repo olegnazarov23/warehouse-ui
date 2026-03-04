@@ -3,6 +3,7 @@ export namespace ai {
 	export class ProviderInfo {
 	    name: string;
 	    default_model: string;
+	    min_model: string;
 	    configured: boolean;
 	
 	    static createFrom(source: any = {}) {
@@ -13,6 +14,7 @@ export namespace ai {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
 	        this.default_model = source["default_model"];
+	        this.min_model = source["min_model"];
 	        this.configured = source["configured"];
 	    }
 	}

@@ -20,6 +20,7 @@ import (
 
 	"warehouse-ui/internal/ai"
 	"warehouse-ui/internal/driver"
+	"warehouse-ui/internal/logger"
 	"warehouse-ui/internal/store"
 )
 
@@ -71,25 +72,33 @@ func (a *App) startup(ctx context.Context) {
 
 	// Initialize the local store
 	dataDir := filepath.Join(userDataDir(), "warehouse-ui")
+
+	// Initialize logger first
+	logger.Init(dataDir)
+	logger.Info("starting up, data dir: %s", dataDir)
+
 	s, err := store.New(dataDir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to init store: %v\n", err)
+		logger.Error("failed to init store: %v", err)
 		return
 	}
 	a.store = s
 
 	// Load AI settings from store
 	a.loadAISettings()
+	logger.Info("startup complete")
 }
 
 // shutdown is called when the app is closing.
 func (a *App) shutdown(ctx context.Context) {
+	logger.Info("shutting down")
 	if a.driver != nil {
 		a.driver.Disconnect()
 	}
 	if a.store != nil {
 		a.store.Close()
 	}
+	logger.Close()
 }
 
 // =========================================================================
@@ -116,15 +125,20 @@ func (a *App) Connect(cfg driver.ConnectionConfig) (ConnectionStatus, error) {
 		a.driver = nil
 	}
 
+	logger.Info("connecting: driver=%s host=%s db=%s", cfg.Type, cfg.Host, cfg.Database)
+
 	d, err := driver.New(cfg.Type)
 	if err != nil {
+		logger.Error("driver init failed: %v", err)
 		return ConnectionStatus{}, err
 	}
 
 	if err := d.Connect(a.ctx, cfg); err != nil {
+		logger.Error("connect failed: %v", err)
 		return ConnectionStatus{}, err
 	}
 
+	logger.Info("connected successfully: %s", cfg.Type)
 	a.driver = d
 	a.connID = cfg.ID
 	a.connName = cfg.Name
@@ -834,6 +848,8 @@ func (a *App) Execute(sql string, limit int) (*driver.QueryResult, error) {
 		limit = 10000
 	}
 
+	logger.Info("execute: limit=%d sql=%.100s", limit, sql)
+
 	// Check cache first
 	cacheKey := a.queryCacheKey(connID, sql, limit)
 	if cached := a.getFromCache(cacheKey); cached != nil {
@@ -1082,8 +1098,10 @@ func (a *App) ListTemplates(driverType string) ([]store.QueryTemplate, error) {
 // editorContext is a JSON string describing the current editor state (SQL, results, errors).
 func (a *App) AiChat(message, conversationID, editorContext string) error {
 	if a.aiProv == nil || !a.aiProv.IsConfigured() {
+		logger.Warn("ai chat: provider not configured")
 		return fmt.Errorf("AI provider not configured. Go to Settings to set up an API key.")
 	}
+	logger.Info("ai chat: conv=%s msg=%.80s", conversationID, message)
 
 	// Ensure conversation exists in store
 	if a.store != nil {
@@ -1312,6 +1330,7 @@ func (a *App) GetAiProviders() []ai.ProviderInfo {
 		providers = append(providers, ai.ProviderInfo{
 			Name:         prov.Name(),
 			DefaultModel: prov.DefaultModel(),
+			MinModel:     prov.MinModel(),
 			Configured:   false, // Will check with actual key
 		})
 	}
@@ -1349,8 +1368,11 @@ func (a *App) GetAiSettings() *AiSettings {
 
 // SetAiSettings validates the key with a test call, then saves.
 func (a *App) SetAiSettings(providerName, model, apiKey, endpoint string) error {
+	logger.Info("set ai settings: provider=%s model=%s endpoint=%s", providerName, model, endpoint)
+
 	prov, err := ai.New(providerName, apiKey, endpoint)
 	if err != nil {
+		logger.Error("ai provider init: %v", err)
 		return err
 	}
 
@@ -1362,10 +1384,12 @@ func (a *App) SetAiSettings(providerName, model, apiKey, endpoint string) error 
 	}
 	_, err = prov.Complete(a.ctx, testMsgs, &ai.SchemaContext{}, useModel)
 	if err != nil {
+		logger.Error("ai validation failed: %v", err)
 		return fmt.Errorf("API key validation failed: %w", err)
 	}
 
 	a.aiProv = prov
+	logger.Info("ai provider configured: %s/%s", providerName, useModel)
 
 	// Persist settings
 	if a.store != nil {
@@ -2159,6 +2183,11 @@ func (a *App) loadAISettings() {
 			a.aiProv = prov
 		}
 	}
+}
+
+// GetLogPath returns the path to the application log file.
+func (a *App) GetLogPath() string {
+	return logger.Path()
 }
 
 func userDataDir() string {

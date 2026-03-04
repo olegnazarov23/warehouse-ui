@@ -403,6 +403,12 @@
           placeholder={settingsProvider === 'local' ? 'e.g. llama-3.1-8b' : (providers.find(p => p.name === settingsProvider)?.default_model ?? 'default')}
           bind:value={settingsModel}
         />
+        {#if settingsProvider !== 'local'}
+          {@const currentProv = providers.find(p => p.name === settingsProvider)}
+          {#if currentProv?.min_model}
+            <p class="text-[11px] text-text-muted mt-1">Minimum recommended: {currentProv.min_model}+</p>
+          {/if}
+        {/if}
       </div>
 
       <!-- Save button + status -->

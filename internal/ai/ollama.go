@@ -26,6 +26,7 @@ type OllamaProvider struct {
 
 func (p *OllamaProvider) Name() string         { return "ollama" }
 func (p *OllamaProvider) DefaultModel() string { return "llama3" }
+func (p *OllamaProvider) MinModel() string     { return "llama3, qwen2.5, deepseek-r1" }
 
 func (p *OllamaProvider) IsConfigured() bool {
 	// Check if Ollama is running
@@ -51,6 +52,9 @@ type ollamaMessage struct {
 
 type ollamaOptions struct {
 	Temperature float64 `json:"temperature"`
+	TopP        float64 `json:"top_p,omitempty"`
+	TopK        int     `json:"top_k,omitempty"`
+	NumCtx      int     `json:"num_ctx,omitempty"`
 }
 
 type ollamaStreamResponse struct {
@@ -75,7 +79,12 @@ func (p *OllamaProvider) StreamChat(ctx context.Context, messages []Message, sch
 		Model:    model,
 		Messages: ollamaMsgs,
 		Stream:   true,
-		Options:  ollamaOptions{Temperature: 0.2},
+		Options: ollamaOptions{
+			Temperature: 0.2,
+			TopP:        0.95,
+			TopK:        40,
+			NumCtx:      8192,
+		},
 	})
 
 	req, err := http.NewRequestWithContext(ctx, "POST", p.endpoint+"/api/chat", bytes.NewReader(body))

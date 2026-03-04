@@ -23,6 +23,7 @@ type OpenAIProvider struct {
 
 func (p *OpenAIProvider) Name() string         { return "openai" }
 func (p *OpenAIProvider) DefaultModel() string { return "gpt-4o" }
+func (p *OpenAIProvider) MinModel() string     { return "gpt-4o, o3, gpt-5.2" }
 func (p *OpenAIProvider) IsConfigured() bool   { return p.apiKey != "" }
 
 func (p *OpenAIProvider) client() *openai.Client {
@@ -44,12 +45,13 @@ func (p *OpenAIProvider) StreamChat(ctx context.Context, messages []Message, sch
 	c := p.client()
 	oaiMsgs := buildOpenAIMessages(messages, schema)
 
-	stream, err := c.CreateChatCompletionStream(ctx, openai.ChatCompletionRequest{
-		Model:       model,
-		Messages:    oaiMsgs,
-		Temperature: 0.2,
-		Stream:      true,
-	})
+	req := openai.ChatCompletionRequest{
+		Model:    model,
+		Messages: oaiMsgs,
+		Stream:   true,
+	}
+	applyModelParams(&req)
+	stream, err := c.CreateChatCompletionStream(ctx, req)
 	if err != nil {
 		return fmt.Errorf("openai stream: %w", err)
 	}
@@ -81,11 +83,12 @@ func (p *OpenAIProvider) Complete(ctx context.Context, messages []Message, schem
 	c := p.client()
 	oaiMsgs := buildOpenAIMessages(messages, schema)
 
-	resp, err := c.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-		Model:       model,
-		Messages:    oaiMsgs,
-		Temperature: 0.2,
-	})
+	req := openai.ChatCompletionRequest{
+		Model:    model,
+		Messages: oaiMsgs,
+	}
+	applyModelParams(&req)
+	resp, err := c.CreateChatCompletion(ctx, req)
 	if err != nil {
 		return "", fmt.Errorf("openai complete: %w", err)
 	}
@@ -93,6 +96,27 @@ func (p *OpenAIProvider) Complete(ctx context.Context, messages []Message, schem
 		return "", fmt.Errorf("openai: empty response")
 	}
 	return resp.Choices[0].Message.Content, nil
+}
+
+// applyModelParams sets optimal generation parameters based on model family.
+// Newer models (gpt-5.x, o-series) have fixed temperature/top_p and use reasoning_effort instead.
+// Classic models (gpt-4o, gpt-4, gpt-3.5) support temperature tuning.
+func applyModelParams(req *openai.ChatCompletionRequest) {
+	m := strings.ToLower(req.Model)
+	switch {
+	case strings.HasPrefix(m, "o1"), strings.HasPrefix(m, "o3"), strings.HasPrefix(m, "o4"):
+		// Reasoning models: use reasoning_effort, temperature/top_p/n locked at 1
+		req.ReasoningEffort = "high"
+		req.MaxCompletionTokens = 16384
+	case strings.HasPrefix(m, "gpt-5"):
+		// GPT-5.x: temperature/top_p/n fixed at 1, presence/frequency_penalty fixed at 0
+		req.MaxCompletionTokens = 16384
+	default:
+		// Classic models (gpt-4o, gpt-4, gpt-3.5, etc.)
+		req.Temperature = 0.2
+		req.TopP = 0.95
+		req.MaxTokens = 4096
+	}
 }
 
 func buildOpenAIMessages(messages []Message, schema *SchemaContext) []openai.ChatCompletionMessage {

@@ -55,6 +55,8 @@ export function GetHistory(arg1:string,arg2:number,arg3:number):Promise<Array<st
 
 export function GetHistoryStats():Promise<store.HistoryStats>;
 
+export function GetLogPath():Promise<string>;
+
 export function GetQueryBySlug(arg1:string):Promise<store.SavedQuery>;
 
 export function GetTableSchema(arg1:string,arg2:string):Promise<driver.TableInfo>;

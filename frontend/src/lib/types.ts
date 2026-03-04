@@ -145,6 +145,7 @@ export interface QueryTemplate {
 export interface ProviderInfo {
   name: string;
   default_model: string;
+  min_model: string;
   configured: boolean;
 }
 
