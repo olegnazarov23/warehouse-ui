@@ -126,6 +126,10 @@ export function ListSavedQueries(arg1) {
   return window['go']['main']['App']['ListSavedQueries'](arg1);
 }
 
+export function ListServerDatabases(arg1) {
+  return window['go']['main']['App']['ListServerDatabases'](arg1);
+}
+
 export function ListTables(arg1) {
   return window['go']['main']['App']['ListTables'](arg1);
 }

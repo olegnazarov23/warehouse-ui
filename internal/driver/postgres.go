@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -32,7 +33,7 @@ func (d *PostgresDriver) Connect(ctx context.Context, cfg ConnectionConfig) erro
 	}
 
 	host := cfg.Host
-	port := ""
+	port := "5432"
 	if host == "" {
 		host = "127.0.0.1"
 	}
@@ -40,17 +41,23 @@ func (d *PostgresDriver) Connect(ctx context.Context, cfg ConnectionConfig) erro
 	if strings.Contains(host, ":") {
 		parts := strings.SplitN(host, ":", 2)
 		host = parts[0]
-		port = parts[1]
+		if parts[1] != "" {
+			port = parts[1]
+		}
 	}
 	if p, ok := cfg.Options["port"]; ok && p != "" {
 		port = p
 	}
 
-	dsn := fmt.Sprintf("host=%s dbname=%s user=%s password=%s sslmode=%s",
-		host, cfg.Database, cfg.Username, cfg.Password, ssl)
-	if port != "" {
-		dsn += " port=" + port
+	dbname := cfg.Database
+	if dbname == "" {
+		dbname = "postgres"
 	}
+
+	// Use URL format for reliable parsing (key=value DSN breaks on empty/special values)
+	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
+		url.QueryEscape(cfg.Username), url.QueryEscape(cfg.Password),
+		host, port, url.PathEscape(dbname), ssl)
 
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {

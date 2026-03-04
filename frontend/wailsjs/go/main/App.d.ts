@@ -67,6 +67,8 @@ export function ListSavedConnections():Promise<Array<store.SavedConnection>>;
 
 export function ListSavedQueries(arg1:string):Promise<Array<store.SavedQuery>>;
 
+export function ListServerDatabases(arg1:driver.ConnectionConfig):Promise<Array<string>>;
+
 export function ListTables(arg1:string):Promise<Array<driver.TableInfo>>;
 
 export function ListTemplates(arg1:string):Promise<Array<store.QueryTemplate>>;

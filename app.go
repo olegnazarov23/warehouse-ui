@@ -666,6 +666,59 @@ func (a *App) TestConnection(cfg driver.ConnectionConfig) error {
 	return nil
 }
 
+// ListServerDatabases temporarily connects to a server and returns available database names.
+// Works for PostgreSQL, MySQL, and ClickHouse.
+func (a *App) ListServerDatabases(cfg driver.ConnectionConfig) ([]string, error) {
+	tmpCfg := cfg
+
+	var query string
+	switch cfg.Type {
+	case driver.Postgres:
+		if tmpCfg.Database == "" {
+			tmpCfg.Database = "postgres"
+		}
+		query = "SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname"
+	case driver.MySQL:
+		if tmpCfg.Database == "" {
+			tmpCfg.Database = "information_schema"
+		}
+		query = "SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME NOT IN ('information_schema','performance_schema','mysql','sys') ORDER BY SCHEMA_NAME"
+	case driver.ClickHouse:
+		if tmpCfg.Database == "" {
+			tmpCfg.Database = "default"
+		}
+		query = "SELECT name FROM system.databases WHERE name NOT IN ('system','INFORMATION_SCHEMA','information_schema') ORDER BY name"
+	default:
+		return nil, fmt.Errorf("database discovery not supported for %s", cfg.Type)
+	}
+
+	d, err := driver.New(tmpCfg.Type)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(a.ctx, 10*time.Second)
+	defer cancel()
+
+	if err := d.Connect(ctx, tmpCfg); err != nil {
+		return nil, fmt.Errorf("connection failed: %w", err)
+	}
+	defer d.Disconnect()
+
+	result, err := d.Execute(ctx, query, 200)
+	if err != nil {
+		return nil, fmt.Errorf("list databases: %w", err)
+	}
+
+	var dbs []string
+	for _, row := range result.Rows {
+		if len(row) > 0 && row[0] != nil {
+			dbs = append(dbs, fmt.Sprintf("%v", row[0]))
+		}
+	}
+	return dbs, nil
+}
+
 // =========================================================================
 // Saved Connections
 // =========================================================================

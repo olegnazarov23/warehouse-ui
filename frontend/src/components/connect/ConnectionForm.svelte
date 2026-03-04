@@ -10,6 +10,7 @@
     scanCodeContext,
     parseConnectionString,
     testConnection,
+    listServerDatabases,
     discoverAll,
     generateSampleQueries,
   } from "../../lib/api";
@@ -56,6 +57,25 @@
   };
   let detectedConns: DetectedConn[] = [];
   let scanning = false;
+
+  // Database discovery
+  let serverDatabases: string[] = [];
+  let discoveringDbs = false;
+
+  async function handleDiscoverDatabases() {
+    discoveringDbs = true;
+    error = "";
+    try {
+      const dbs = await listServerDatabases(form);
+      serverDatabases = dbs ?? [];
+      if (serverDatabases.length > 0 && !form.database) {
+        form.database = serverDatabases[0];
+      }
+    } catch (e: any) {
+      error = typeof e === "string" ? e : e?.message || "Failed to discover databases";
+    }
+    discoveringDbs = false;
+  }
 
   $: {
     if (form.type === "bigquery") {
@@ -360,11 +380,39 @@
     </div>
     <div>
       <label class="block text-sm text-text-dim mb-2 font-medium">Database</label>
-      <input
-        type="text"
-        class="w-full px-4 py-3 rounded-xl bg-surface border border-border text-sm outline-none"
-        bind:value={form.database}
-      />
+      <div class="flex gap-2">
+        {#if serverDatabases.length > 0}
+          <select
+            class="flex-1 px-4 py-3 rounded-xl bg-surface border border-border text-sm outline-none"
+            bind:value={form.database}
+          >
+            {#each serverDatabases as db}
+              <option value={db}>{db}</option>
+            {/each}
+          </select>
+        {:else}
+          <input
+            type="text"
+            class="flex-1 px-4 py-3 rounded-xl bg-surface border border-border text-sm outline-none"
+            placeholder="Leave empty to auto-detect"
+            bind:value={form.database}
+          />
+        {/if}
+        <button
+          class="px-4 py-3 text-sm bg-surface border border-border rounded-xl hover:bg-surface-hover font-medium disabled:opacity-50 flex items-center gap-1.5"
+          disabled={discoveringDbs || !form.host}
+          on:click={handleDiscoverDatabases}
+        >
+          {#if discoveringDbs}
+            <div class="w-3.5 h-3.5 border-2 border-accent border-t-transparent rounded-full animate-spin"></div>
+          {:else}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+          {/if}
+          Discover
+        </button>
+      </div>
     </div>
     <div class="grid grid-cols-2 gap-3">
       <div>

@@ -111,6 +111,11 @@ export async function testConnection(cfg: ConnectionConfig): Promise<void> {
   return app.TestConnection(cfg);
 }
 
+export async function listServerDatabases(cfg: ConnectionConfig): Promise<string[]> {
+  const app = await getApp();
+  return app.ListServerDatabases(cfg);
+}
+
 // ── Saved Connections ────────────────────────────────────────────────
 
 export async function listSavedConnections(): Promise<SavedConnection[]> {
