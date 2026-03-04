@@ -3,9 +3,28 @@
   import Shell from "./components/layout/Shell.svelte";
   import ConnectionPage from "./components/connect/ConnectionPage.svelte";
   import { connectionStatus, isConnected } from "./lib/stores/connection";
+  import { clearChat, ai } from "./lib/stores/ai";
   import { getConnectionStatus } from "./lib/api";
 
   let ready = false;
+  let lastConnectionId = "";
+
+  // Clear AI chat when switching to a different connection
+  connectionStatus.subscribe((status) => {
+    if (status.connected && status.id && status.id !== lastConnectionId) {
+      if (lastConnectionId !== "") {
+        clearChat();
+        ai.update((s) => ({
+          ...s,
+          conversations: [],
+          activeConversationId: "",
+        }));
+      }
+      lastConnectionId = status.id;
+    } else if (!status.connected) {
+      lastConnectionId = "";
+    }
+  });
 
   onMount(async () => {
     try {

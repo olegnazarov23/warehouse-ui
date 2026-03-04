@@ -123,6 +123,21 @@ Rules:
 - If a query could be expensive, add a one-line cost warning.
 `)
 
+	// MongoDB-specific instructions
+	if schema != nil && schema.DriverType == "mongodb" {
+		sb.WriteString(`
+MongoDB-specific rules:
+- Write queries in collection.method() syntax: collection.find({}), collection.aggregate([...])
+- Wrap queries in triple-backtick sql code blocks (the UI will parse them).
+- Supported methods: find, aggregate, countDocuments, distinct
+- find() accepts filter and optional projection: collection.find({"status": "active"}, {"name": 1, "email": 1})
+- aggregate() accepts a pipeline array: collection.aggregate([{"$match": ...}, {"$group": ...}])
+- Use $match early in pipelines to reduce data scanned.
+- Use $project to limit fields returned.
+- For date ranges use ISODate-style strings: {"created_at": {"$gte": "2024-01-01T00:00:00Z"}}
+`)
+	}
+
 	if schema != nil && len(schema.Tables) > 0 {
 		sb.WriteString("\n## Connected Database\n")
 		sb.WriteString(fmt.Sprintf("Driver: %s\n", schema.DriverType))

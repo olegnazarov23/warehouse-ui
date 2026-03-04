@@ -13,7 +13,7 @@
 
   let activePane: "data" | "messages" | "explain" | "chart" | "diff" = "data";
 
-  $: sqlHints = tab?.sql ? analyzeSql(tab.sql, $currentDriverType) : [];
+  $: sqlHints = tab?.sql && $currentDriverType !== "mongodb" ? analyzeSql(tab.sql, $currentDriverType) : [];
 
   // Detect if this tab is a preview (editable)
   $: isPreview = tab?.title?.startsWith("Preview: ") ?? false;

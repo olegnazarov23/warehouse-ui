@@ -2,6 +2,7 @@
   import { createEventDispatcher } from "svelte";
   import {
     connect as apiConnect,
+    disconnect as apiDisconnect,
     saveConnection,
     listSavedConnections,
     pickFile,
@@ -28,6 +29,7 @@
     { value: "postgres", label: "PostgreSQL" },
     { value: "mysql", label: "MySQL" },
     { value: "sqlite", label: "SQLite" },
+    { value: "mongodb", label: "MongoDB" },
     { value: "clickhouse", label: "ClickHouse" },
   ];
 
@@ -36,6 +38,7 @@
   let discovering = false;
   let discoveryProgress = "";
   let testing = false;
+  let discoveryCancelled = false;
 
   let bqCredPath = form.options?.credentials_path ?? "";
 
@@ -195,29 +198,43 @@
     testing = false;
   }
 
+  async function handleCancelDiscovery() {
+    discoveryCancelled = true;
+    try { await apiDisconnect(); } catch {}
+    discovering = false;
+    discoveryProgress = "";
+    setDiscoveryLoading(false);
+    connectionStatus.set({ connected: false, driver: "", database: "" } as any);
+  }
+
   async function handleDiscoverAndConnect() {
     error = "";
     discovering = true;
+    discoveryCancelled = false;
     discoveryProgress = "Connecting...";
     setDiscoveryLoading(true, "Connecting...");
 
     try {
       await saveConnection(form);
 
+      if (discoveryCancelled) return;
       discoveryProgress = "Establishing connection...";
       setDiscoveryLoading(true, discoveryProgress);
       const status = await apiConnect(form);
+      if (discoveryCancelled) return;
       connectionStatus.set(status);
 
       // Set code paths for AI context and scan for detected connections
       if (codePaths.length > 0) {
         await setCodePaths(codePaths);
+        if (discoveryCancelled) return;
         discoveryProgress = `Scanning ${codePaths.length} code repo${codePaths.length > 1 ? "s" : ""}...`;
         setDiscoveryLoading(true, discoveryProgress);
 
         // Scan code repos for DB connections (non-blocking — don't fail discovery)
         try {
           const ctx = await scanCodeContext(codePaths);
+          if (discoveryCancelled) return;
           if (ctx?.detected_connections?.length > 0) {
             detectedConns = ctx.detected_connections.map((dc: any) => ({
               source: dc.source,
@@ -231,9 +248,11 @@
         }
       }
 
+      if (discoveryCancelled) return;
       discoveryProgress = "Discovering datasets and tables...";
       setDiscoveryLoading(true, discoveryProgress);
       const result = await discoverAll();
+      if (discoveryCancelled) return;
       setDiscoveryResult(result);
 
       if (result.databases.length > 0) {
@@ -249,6 +268,7 @@
       discoveryProgress = `Found ${result.total_tables} tables across ${result.databases.length} datasets`;
       setDiscoveryLoading(true, discoveryProgress);
 
+      if (discoveryCancelled) return;
       try {
         const queries = await generateSampleQueries(JSON.stringify(result));
         setSampleQueries(queries);
@@ -260,6 +280,7 @@
       savedConnections.set(conns ?? []);
 
     } catch (e: any) {
+      if (discoveryCancelled) return;
       error = typeof e === "string" ? e : e?.message || "Discovery failed";
       setDiscoveryLoading(false);
     }
@@ -374,7 +395,9 @@
           ? "localhost:5432"
           : form.type === "mysql"
             ? "localhost:3306"
-            : "localhost:9000"}
+            : form.type === "mongodb"
+              ? "localhost:27017"
+              : "localhost:9000"}
         bind:value={form.host}
       />
     </div>
@@ -443,6 +466,148 @@
         <option value="verify-full">Verify Full</option>
       </select>
     </div>
+
+    {#if form.type === "mongodb"}
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-sm text-text-dim mb-2 font-medium">Auth Source</label>
+          <input
+            type="text"
+            class="w-full px-4 py-3 rounded-xl bg-surface border border-border text-sm outline-none"
+            placeholder="database name (default)"
+            value={form.options?.auth_source ?? ""}
+            on:input={(e) => {
+              form.options = { ...form.options, auth_source: e.currentTarget.value };
+            }}
+          />
+        </div>
+        <div>
+          <label class="block text-sm text-text-dim mb-2 font-medium">Replica Set</label>
+          <input
+            type="text"
+            class="w-full px-4 py-3 rounded-xl bg-surface border border-border text-sm outline-none"
+            placeholder="optional"
+            value={form.options?.replica_set ?? ""}
+            on:input={(e) => {
+              form.options = { ...form.options, replica_set: e.currentTarget.value };
+            }}
+          />
+        </div>
+      </div>
+    {/if}
+  {/if}
+
+  <!-- SSH Tunnel (for network databases) -->
+  {#if form.type !== "bigquery" && form.type !== "sqlite"}
+    <div>
+      <button
+        class="flex items-center gap-2 text-sm text-text-dim hover:text-accent font-medium"
+        on:click={() => {
+          const cur = form.options?.ssh_host ?? "";
+          if (cur) {
+            // Clear SSH settings
+            const { ssh_host, ssh_user, ssh_password, ssh_key_path, ...rest } = form.options ?? {};
+            form.options = rest;
+          } else {
+            form.options = { ...form.options, ssh_host: "" };
+          }
+          form = form;
+        }}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          {#if form.options?.ssh_host !== undefined}
+            <path d="M6 9l6 6 6-6"/>
+          {:else}
+            <path d="M9 18l6-6-6-6"/>
+          {/if}
+        </svg>
+        SSH Tunnel
+        {#if form.options?.ssh_host}
+          <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-accent/10 text-accent">ON</span>
+        {/if}
+      </button>
+
+      {#if form.options?.ssh_host !== undefined}
+        <div class="mt-3 space-y-3 pl-4 border-l-2 border-border">
+          <div>
+            <label class="block text-sm text-text-dim mb-2 font-medium">SSH Host</label>
+            <input
+              type="text"
+              class="w-full px-4 py-3 rounded-xl bg-surface border border-border text-sm outline-none"
+              placeholder="bastion.example.com or bastion.example.com:22"
+              value={form.options?.ssh_host ?? ""}
+              on:input={(e) => {
+                form.options = { ...form.options, ssh_host: e.currentTarget.value };
+              }}
+            />
+          </div>
+          <div>
+            <label class="block text-sm text-text-dim mb-2 font-medium">Jump Host (ProxyJump)</label>
+            <input
+              type="text"
+              class="w-full px-4 py-3 rounded-xl bg-surface border border-border text-sm outline-none"
+              placeholder="user@bastion (optional, -J equivalent)"
+              value={form.options?.ssh_jump_host ?? ""}
+              on:input={(e) => {
+                form.options = { ...form.options, ssh_jump_host: e.currentTarget.value };
+              }}
+            />
+          </div>
+          <div>
+            <label class="block text-sm text-text-dim mb-2 font-medium">SSH User</label>
+            <input
+              type="text"
+              class="w-full px-4 py-3 rounded-xl bg-surface border border-border text-sm outline-none"
+              placeholder="ubuntu"
+              value={form.options?.ssh_user ?? ""}
+              on:input={(e) => {
+                form.options = { ...form.options, ssh_user: e.currentTarget.value };
+              }}
+            />
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm text-text-dim mb-2 font-medium">SSH Key File</label>
+              <div class="flex gap-2">
+                <input
+                  type="text"
+                  class="flex-1 px-4 py-3 rounded-xl bg-surface border border-border text-sm outline-none"
+                  placeholder="~/.ssh/id_rsa (auto-detected)"
+                  value={form.options?.ssh_key_path ?? ""}
+                  on:input={(e) => {
+                    form.options = { ...form.options, ssh_key_path: e.currentTarget.value };
+                  }}
+                />
+                <button
+                  class="px-4 py-3 text-sm bg-surface border border-border rounded-xl hover:bg-surface-hover font-medium"
+                  on:click={async () => {
+                    const path = await pickFile("Select SSH Key");
+                    if (path) form.options = { ...form.options, ssh_key_path: path };
+                  }}
+                >
+                  Browse
+                </button>
+              </div>
+            </div>
+            <div>
+              <label class="block text-sm text-text-dim mb-2 font-medium">SSH Password</label>
+              <input
+                type="password"
+                class="w-full px-4 py-3 rounded-xl bg-surface border border-border text-sm outline-none"
+                placeholder="Key passphrase or password"
+                value={form.options?.ssh_password ?? ""}
+                on:input={(e) => {
+                  form.options = { ...form.options, ssh_password: e.currentTarget.value };
+                }}
+              />
+            </div>
+          </div>
+          <p class="text-xs text-text-muted">
+            Leave key file empty to auto-detect ~/.ssh/id_rsa, id_ed25519, or id_ecdsa.
+          </p>
+        </div>
+      {/if}
+    </div>
   {/if}
 
   <!-- Code Repositories (AI Context) -->
@@ -486,7 +651,13 @@
   {#if discovering && discoveryProgress}
     <div class="flex items-center gap-3 p-4 rounded-xl bg-accent/5 border border-accent/20">
       <div class="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin"></div>
-      <span class="text-sm text-accent">{discoveryProgress}</span>
+      <span class="text-sm text-accent flex-1">{discoveryProgress}</span>
+      <button
+        class="px-3 py-1.5 text-xs font-medium text-danger bg-danger/10 rounded-lg hover:bg-danger/20 transition-colors"
+        on:click={handleCancelDiscovery}
+      >
+        Cancel
+      </button>
     </div>
   {/if}
 

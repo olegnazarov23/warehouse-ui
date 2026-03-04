@@ -1,8 +1,8 @@
 # Warehouse UI
 
-> Open-source universal database IDE — connect to BigQuery, PostgreSQL, MySQL, SQLite, ClickHouse from one native desktop app. Browse schemas, write SQL with Monaco, estimate costs before running, get AI-powered query suggestions, and export results as CSV, JSON, or Excel.
+> Open-source universal database IDE — connect to BigQuery, PostgreSQL, MySQL, SQLite, MongoDB, ClickHouse from one native desktop app. Browse schemas, write SQL or MongoDB queries with Monaco, estimate costs before running, get AI-powered query suggestions, and export results as CSV, JSON, or Excel.
 
-**Keywords**: database IDE, SQL editor, BigQuery GUI, PostgreSQL client, MySQL workbench alternative, database browser, query tool, schema explorer, SQL cost estimator, AI SQL assistant, data analytics tool, open source database client, desktop database app, Wails Go Svelte
+**Keywords**: database IDE, SQL editor, BigQuery GUI, PostgreSQL client, MySQL workbench alternative, MongoDB GUI, database browser, query tool, schema explorer, SQL cost estimator, AI SQL assistant, data analytics tool, open source database client, desktop database app, Wails Go Svelte
 
 ---
 
@@ -19,10 +19,17 @@ Or build from source (see below).
 
 ## Features
 
-- **Multi-database support** — BigQuery, PostgreSQL, MySQL, SQLite, ClickHouse from a single app
+- **Multi-database support** — BigQuery, PostgreSQL, MySQL, SQLite, MongoDB, ClickHouse from a single app
 - **Native desktop performance** — Built with Go + Wails v2 for near-instant startup
-- **Schema browser** — Tree view with databases/datasets, tables, columns, types, and row counts
-- **Monaco SQL editor** — Syntax highlighting, autocomplete, multi-tab, formatting (Ctrl+Shift+F)
+- **Schema browser** — Tree view with databases/datasets, tables/collections, columns, types, and row counts
+- **Monaco SQL editor** — Syntax highlighting, schema-aware autocomplete, multi-tab, formatting
+- **MongoDB support** — Shell-style queries (find, aggregate, countDocuments, distinct) with automatic document-to-table flattening
+- **SSH tunneling** — Connect through bastion hosts with key or password auth, ProxyJump (-J) support, auto-resolves ~/.ssh/config aliases and keys
+- **Query explain visualizer** — Visual tree of query execution plans (PostgreSQL, MySQL, SQLite)
+- **Chart panel** — Bar, line, and pie charts from query results with auto-detected axes
+- **Virtual scrolling** — Handles 10k+ row results without DOM bloat
+- **Inline cell editing** — Double-click cells in preview tables to generate UPDATE queries
+- **Data diff** — Compare two query results side-by-side with color-coded changes
 - **Cost projection** — Dry-run queries on BigQuery/ClickHouse to see estimated cost, rows, and referenced tables before execution
 - **AI assistant** — Pluggable LLM (OpenAI, Anthropic, Ollama, or any local model). Schema-aware SQL generation, query explanation, and optimization
 - **AI query optimizer** — One-click iterative optimization: AI suggests improvements, each verified by dry-run
@@ -49,7 +56,7 @@ _Coming soon_
 
 1. Download from the [Releases page](https://github.com/olegnazarov23/warehouse-ui/releases/latest)
 2. Install and launch
-3. Add a database connection (BigQuery, PostgreSQL, MySQL, or SQLite)
+3. Add a database connection (BigQuery, PostgreSQL, MySQL, SQLite, or MongoDB)
 4. Click the gear icon in the AI panel to configure your AI provider (optional)
 
 ### Option 2: Build from source
@@ -96,14 +103,17 @@ Go (Wails v2)           Svelte 5 + TailwindCSS 4
 │  │  ├─ bigquery │     │  ├─ Shell (3-panel)      │
 │  │  ├─ postgres │     │  │  ├─ Sidebar           │
 │  │  ├─ mysql    │     │  │  │  ├─ SchemaTree     │
-│  │  └─ sqlite   │     │  │  │  ├─ SavedQueries   │
-│  ├─ store/      │     │  │  │  ├─ History        │
-│  │  └─ sqlite   │     │  │  │  └─ Templates      │
-│  └─ ai/         │     │  │  ├─ QueryEditor       │
-│     ├─ openai   │     │  │  ├─ ResultsPanel      │
-│     ├─ anthropic│     │  │  └─ DataGrid          │
-│     └─ ollama   │     │  └─ AiPanel              │
-└─────────────────┘     └─────────────────────────┘
+│  │  ├─ mongodb  │     │  │  │  ├─ SavedQueries   │
+│  │  └─ sqlite   │     │  │  │  ├─ History        │
+│  ├─ tunnel/     │     │  │  │  └─ Templates      │
+│  │  └─ ssh      │     │  │  ├─ QueryEditor       │
+│  ├─ store/      │     │  │  ├─ ResultsPanel      │
+│  │  └─ sqlite   │     │  │  └─ DataGrid          │
+│  └─ ai/         │     │  └─ AiPanel              │
+│     ├─ openai   │     └─────────────────────────┘
+│     ├─ anthropic│
+│     └─ ollama   │
+└─────────────────┘
         │                          │
         └──── Wails Bindings ──────┘
 ```
@@ -119,11 +129,11 @@ Go (Wails v2)           Svelte 5 + TailwindCSS 4
 | Database | Status | Cost Estimate | Notes |
 |----------|--------|---------------|-------|
 | BigQuery | Done | Yes ($5/TB) | Service account JSON auth, dry-run, referenced tables |
-| PostgreSQL | Done | No | pgx driver, SSL support, EXPLAIN row estimates |
-| MySQL | Done | No | go-sql-driver, SSL support, EXPLAIN row estimates |
+| PostgreSQL | Done | No | pgx driver, SSL support, EXPLAIN row estimates, SSH tunnel |
+| MySQL | Done | No | go-sql-driver, SSL support, EXPLAIN row estimates, SSH tunnel |
 | SQLite | Done | No | Pure Go (modernc.org), no CGO needed |
+| MongoDB | Done | No | Shell-style queries (find/aggregate/distinct), document flattening, SSH tunnel |
 | ClickHouse | Planned | Yes | Coming soon |
-| MongoDB | Planned | No | JSON query mode |
 
 ## Code Repository Scanning
 

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -22,6 +23,7 @@ import (
 	"warehouse-ui/internal/driver"
 	"warehouse-ui/internal/logger"
 	"warehouse-ui/internal/store"
+	"warehouse-ui/internal/tunnel"
 )
 
 // queryCacheEntry holds a cached query result with expiry.
@@ -50,6 +52,9 @@ type App struct {
 	connID   string
 	connName string
 	connType driver.DriverType
+
+	// SSH tunnel (if active)
+	sshTunnel *tunnel.Tunnel
 
 	// Code repository paths for AI context
 	codePaths []string
@@ -124,8 +129,38 @@ func (a *App) Connect(cfg driver.ConnectionConfig) (ConnectionStatus, error) {
 		a.driver.Disconnect()
 		a.driver = nil
 	}
+	if a.sshTunnel != nil {
+		a.sshTunnel.Close()
+		a.sshTunnel = nil
+	}
 
 	logger.Info("connecting: driver=%s host=%s db=%s", cfg.Type, cfg.Host, cfg.Database)
+
+	// Set up SSH tunnel if configured
+	if sshHost := cfg.Options["ssh_host"]; sshHost != "" {
+		remoteHost, remotePort := splitHostPort(cfg.Host, defaultPort(cfg.Type))
+
+		sshCfg := tunnel.SSHConfig{
+			Host:       sshHost,
+			User:       cfg.Options["ssh_user"],
+			Password:   cfg.Options["ssh_password"],
+			KeyPath:    cfg.Options["ssh_key_path"],
+			JumpHost:   cfg.Options["ssh_jump_host"],
+			RemoteHost: remoteHost,
+			RemotePort: remotePort,
+		}
+
+		tun, err := tunnel.Open(a.ctx, sshCfg)
+		if err != nil {
+			logger.Error("ssh tunnel failed: %v", err)
+			return ConnectionStatus{}, fmt.Errorf("SSH tunnel: %w", err)
+		}
+		a.sshTunnel = tun
+
+		// Rewrite host to tunnel's local address
+		cfg.Host = tun.LocalAddr()
+		logger.Info("ssh tunnel established: %s -> %s:%s", tun.LocalAddr(), remoteHost, remotePort)
+	}
 
 	d, err := driver.New(cfg.Type)
 	if err != nil {
@@ -135,6 +170,10 @@ func (a *App) Connect(cfg driver.ConnectionConfig) (ConnectionStatus, error) {
 
 	if err := d.Connect(a.ctx, cfg); err != nil {
 		logger.Error("connect failed: %v", err)
+		if a.sshTunnel != nil {
+			a.sshTunnel.Close()
+			a.sshTunnel = nil
+		}
 		return ConnectionStatus{}, err
 	}
 
@@ -178,6 +217,10 @@ func (a *App) Disconnect() error {
 		a.driver = nil
 		a.connID = ""
 		a.connName = ""
+		if a.sshTunnel != nil {
+			a.sshTunnel.Close()
+			a.sshTunnel = nil
+		}
 		return err
 	}
 	return nil
@@ -2396,6 +2439,39 @@ func (a *App) loadAISettings() {
 // GetLogPath returns the path to the application log file.
 func (a *App) GetLogPath() string {
 	return logger.Path()
+}
+
+// splitHostPort splits a host string into host and port parts.
+// If no port is present, defaultP is used.
+func splitHostPort(hostStr, defaultP string) (string, string) {
+	if hostStr == "" {
+		return "127.0.0.1", defaultP
+	}
+	host, port, err := net.SplitHostPort(hostStr)
+	if err != nil {
+		// No port in string
+		return hostStr, defaultP
+	}
+	if port == "" {
+		port = defaultP
+	}
+	return host, port
+}
+
+// defaultPort returns the default database port for a driver type.
+func defaultPort(dt driver.DriverType) string {
+	switch dt {
+	case driver.Postgres:
+		return "5432"
+	case driver.MySQL:
+		return "3306"
+	case driver.MongoDB:
+		return "27017"
+	case driver.ClickHouse:
+		return "9000"
+	default:
+		return "5432"
+	}
 }
 
 func userDataDir() string {

@@ -216,6 +216,32 @@ ORDER BY sum(bytes_on_disk) DESC
 LIMIT 20`,
 			"clickhouse", "Schema Exploration", "beginner",
 		},
+
+		// MongoDB templates
+		{
+			"tpl_mg_find_all", "Find all documents (MongoDB)",
+			"Retrieve all documents from a collection with a limit.",
+			`your_collection.find({})`,
+			"mongodb", "Basic Queries", "beginner",
+		},
+		{
+			"tpl_mg_filter", "Filter documents (MongoDB)",
+			"Find documents matching a condition.",
+			`your_collection.find({"status": "active"})`,
+			"mongodb", "Basic Queries", "beginner",
+		},
+		{
+			"tpl_mg_aggregate_group", "Group by field (MongoDB)",
+			"Aggregate documents by a field and count occurrences.",
+			`your_collection.aggregate([{"$group": {"_id": "$category", "count": {"$sum": 1}}}, {"$sort": {"count": -1}}, {"$limit": 20}])`,
+			"mongodb", "Aggregation", "intermediate",
+		},
+		{
+			"tpl_mg_distinct", "Distinct values (MongoDB)",
+			"Get all unique values of a field.",
+			`your_collection.distinct("status", {})`,
+			"mongodb", "Basic Queries", "beginner",
+		},
 	}
 
 	for _, t := range templates {

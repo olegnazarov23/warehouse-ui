@@ -222,29 +222,31 @@
       {/if}
     </button>
 
-    <!-- Explain -->
-    <button
-      class="px-3 py-2 text-sm text-text-dim rounded-lg hover:bg-surface-hover hover:text-text font-medium disabled:opacity-50"
-      disabled={explaining || !$activeTab?.sql?.trim()}
-      on:click={handleExplain}
-    >
-      {#if explaining}
-        <span class="flex items-center gap-1.5">
-          <span class="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></span>
+    <!-- Explain (SQL only) -->
+    {#if $currentDriverType !== "mongodb"}
+      <button
+        class="px-3 py-2 text-sm text-text-dim rounded-lg hover:bg-surface-hover hover:text-text font-medium disabled:opacity-50"
+        disabled={explaining || !$activeTab?.sql?.trim()}
+        on:click={handleExplain}
+      >
+        {#if explaining}
+          <span class="flex items-center gap-1.5">
+            <span class="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></span>
+            Explain
+          </span>
+        {:else}
           Explain
-        </span>
-      {:else}
-        Explain
-      {/if}
-    </button>
+        {/if}
+      </button>
 
-    <!-- Format -->
-    <button
-      class="px-3 py-2 text-sm text-text-dim rounded-lg hover:bg-surface-hover hover:text-text font-medium"
-      on:click={handleFormat}
-    >
-      Format
-    </button>
+      <!-- Format -->
+      <button
+        class="px-3 py-2 text-sm text-text-dim rounded-lg hover:bg-surface-hover hover:text-text font-medium"
+        on:click={handleFormat}
+      >
+        Format
+      </button>
+    {/if}
 
     <div class="flex-1"></div>
 

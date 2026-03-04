@@ -3,6 +3,7 @@
   import { get } from "svelte/store";
   import { activeTab, updateTabSQL, editor } from "../../lib/stores/editor";
   import { schema } from "../../lib/stores/schema";
+  import { currentDriverType } from "../../lib/stores/connection";
   import type * as Monaco from "monaco-editor";
 
   let container: HTMLDivElement;
@@ -34,7 +35,7 @@
     // Configure SQL language defaults
     monacoEditor = monaco.editor.create(container, {
       value: $activeTab?.sql ?? "",
-      language: "sql",
+      language: $currentDriverType === "mongodb" ? "javascript" : "sql",
       theme: "vs-dark",
       minimap: { enabled: false },
       fontSize: 13,
@@ -73,8 +74,9 @@
     });
     monaco.editor.setTheme("warehouse-dark");
 
-    // Schema-aware autocomplete
+    // Schema-aware autocomplete (SQL only — MongoDB uses JS syntax)
     const m = monaco;
+    if ($currentDriverType !== "mongodb") {
     completionDisposable = m.languages.registerCompletionItemProvider("sql", {
       triggerCharacters: [".", " ", "("],
       provideCompletionItems(model, position) {
@@ -128,6 +130,7 @@
         return { suggestions };
       },
     });
+    }
 
     // Listen for content changes from user typing
     monacoEditor.onDidChangeModelContent(() => {
