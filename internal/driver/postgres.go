@@ -30,9 +30,25 @@ func (d *PostgresDriver) Connect(ctx context.Context, cfg ConnectionConfig) erro
 	if ssl == "" {
 		ssl = "disable"
 	}
+
+	host := cfg.Host
+	port := ""
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	// Split host:port if user entered "hostname:5432"
+	if strings.Contains(host, ":") {
+		parts := strings.SplitN(host, ":", 2)
+		host = parts[0]
+		port = parts[1]
+	}
+	if p, ok := cfg.Options["port"]; ok && p != "" {
+		port = p
+	}
+
 	dsn := fmt.Sprintf("host=%s dbname=%s user=%s password=%s sslmode=%s",
-		cfg.Host, cfg.Database, cfg.Username, cfg.Password, ssl)
-	if port, ok := cfg.Options["port"]; ok {
+		host, cfg.Database, cfg.Username, cfg.Password, ssl)
+	if port != "" {
 		dsn += " port=" + port
 	}
 
@@ -67,22 +83,28 @@ func (d *PostgresDriver) Ping(ctx context.Context) error {
 }
 
 func (d *PostgresDriver) ListDatabases(ctx context.Context) ([]string, error) {
+	// For PostgreSQL, return schemas within the connected database.
+	// This maps to the UI concept of "databases" as browsable namespaces,
+	// since ListTables expects a schema name.
 	rows, err := d.db.QueryContext(ctx,
-		"SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname")
+		`SELECT nspname FROM pg_namespace
+		 WHERE nspname NOT LIKE 'pg_%'
+		   AND nspname != 'information_schema'
+		 ORDER BY CASE WHEN nspname = 'public' THEN 0 ELSE 1 END, nspname`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var dbs []string
+	var schemas []string
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {
 			return nil, err
 		}
-		dbs = append(dbs, name)
+		schemas = append(schemas, name)
 	}
-	return dbs, rows.Err()
+	return schemas, rows.Err()
 }
 
 func (d *PostgresDriver) ListTables(ctx context.Context, schema string) ([]TableInfo, error) {

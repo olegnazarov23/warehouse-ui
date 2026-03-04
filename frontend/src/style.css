@@ -111,6 +111,7 @@ button:focus-visible {
 
 .wails-drag {
   --wails-draggable: drag;
+  -webkit-app-region: drag;
 }
 .wails-drag button,
 .wails-drag a,
@@ -118,6 +119,7 @@ button:focus-visible {
 .wails-drag select,
 .wails-drag textarea {
   --wails-draggable: no-drag;
+  -webkit-app-region: no-drag;
 }
 
 /* ── Monaco override ─────────────────────────────────────── */
