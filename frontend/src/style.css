@@ -1,0 +1,136 @@
+@import "tailwindcss";
+
+/* ── Custom theme (macOS-inspired, defaults to dark) ──────── */
+
+@theme {
+  /* Dark mode colors (default) */
+  --color-bg: #1c1c1e;
+  --color-surface: #2c2c2e;
+  --color-surface-hover: #3a3a3c;
+  --color-surface-active: #48484a;
+  --color-border: #3a3a3c;
+  --color-border-focus: #0a84ff;
+  --color-text: #f5f5f7;
+  --color-text-dim: #98989d;
+  --color-text-muted: #636366;
+  --color-accent: #0a84ff;
+  --color-accent-hover: #409cff;
+  --color-success: #30d158;
+  --color-warning: #ff9f0a;
+  --color-danger: #ff453a;
+}
+
+/* ── Light mode overrides (follows system preference) ─────── */
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --color-bg: #f5f5f7;
+    --color-surface: #ffffff;
+    --color-surface-hover: #f0f0f2;
+    --color-surface-active: #e5e5ea;
+    --color-border: #d1d1d6;
+    --color-border-focus: #007aff;
+    --color-text: #1d1d1f;
+    --color-text-dim: #6e6e73;
+    --color-text-muted: #aeaeb2;
+    --color-accent: #007aff;
+    --color-accent-hover: #0071e3;
+    --color-success: #28cd41;
+    --color-warning: #ff9500;
+    --color-danger: #ff3b30;
+  }
+}
+
+/* ── Base reset ──────────────────────────────────────────── */
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+    "Helvetica Neue", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.01em;
+}
+
+#app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Scrollbar (thin, macOS-like) ────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.3);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.5);
+}
+
+/* ── Transitions ─────────────────────────────────────────── */
+
+button,
+input,
+select,
+textarea {
+  transition: all 0.2s ease;
+}
+
+/* ── Focus ring (macOS blue ring) ────────────────────────── */
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.3);
+  border-color: var(--color-accent) !important;
+}
+
+button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.3);
+}
+
+/* ── Drag region (mac titlebar) ──────────────────────────── */
+
+.wails-drag {
+  --wails-draggable: drag;
+}
+.wails-drag button,
+.wails-drag a,
+.wails-drag input,
+.wails-drag select,
+.wails-drag textarea {
+  --wails-draggable: no-drag;
+}
+
+/* ── Monaco override ─────────────────────────────────────── */
+
+.monaco-editor {
+  border-radius: 8px;
+}
+.monaco-editor .margin {
+  background: var(--color-surface) !important;
+}
+
+/* ── macOS-style selection ───────────────────────────────── */
+
+::selection {
+  background: rgba(10, 132, 255, 0.3);
+}

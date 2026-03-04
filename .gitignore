@@ -1,0 +1,51 @@
+# Build output
+build/bin
+*.exe
+*.dmg
+
+# Dependencies
+node_modules
+frontend/node_modules
+
+# Frontend dist (rebuilt on build)
+frontend/dist
+
+# Go
+vendor/
+
+# Data (local state)
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE / AI tools
+.idea/
+.vscode/
+.cursor/
+.claude/
+.windsurf/
+.fleet/
+.zed/
+*.swp
+*.swo
+*~
+
+# Credentials (never commit)
+*.pem
+*.key
+*.p12
+*.json.key
+*-credentials.json
+*-sa.json
+service-account*.json
+*-service-account.json
