@@ -1,11 +1,14 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
+  import { get } from "svelte/store";
   import { activeTab, updateTabSQL, editor } from "../../lib/stores/editor";
+  import { schema } from "../../lib/stores/schema";
   import type * as Monaco from "monaco-editor";
 
   let container: HTMLDivElement;
   let monacoEditor: Monaco.editor.IStandaloneCodeEditor | undefined;
   let monaco: typeof Monaco | undefined;
+  let completionDisposable: Monaco.IDisposable | undefined;
 
   // Track the active tab to update editor content
   let currentTabId = "";
@@ -70,6 +73,62 @@
     });
     monaco.editor.setTheme("warehouse-dark");
 
+    // Schema-aware autocomplete
+    const m = monaco;
+    completionDisposable = m.languages.registerCompletionItemProvider("sql", {
+      triggerCharacters: [".", " ", "("],
+      provideCompletionItems(model, position) {
+        const word = model.getWordUntilPosition(position);
+        const range = {
+          startLineNumber: position.lineNumber,
+          endLineNumber: position.lineNumber,
+          startColumn: word.startColumn,
+          endColumn: word.endColumn,
+        };
+
+        const lineContent = model.getLineContent(position.lineNumber);
+        const textBefore = lineContent.substring(0, position.column - 1);
+        const dotMatch = textBefore.match(/(\w+)\.$/);
+
+        const suggestions: Monaco.languages.CompletionItem[] = [];
+        const s = get(schema);
+
+        if (dotMatch) {
+          const tableName = dotMatch[1];
+          const cols = s.tableColumns[tableName] || [];
+          for (const col of cols) {
+            suggestions.push({
+              label: col.name,
+              kind: m.languages.CompletionItemKind.Field,
+              detail: col.type + (col.is_primary ? " PK" : ""),
+              insertText: col.name,
+              range,
+            });
+          }
+        } else {
+          for (const t of s.tables) {
+            suggestions.push({
+              label: t.name,
+              kind: m.languages.CompletionItemKind.Struct,
+              detail: `${t.type}${t.row_count ? ` (${t.row_count} rows)` : ""}`,
+              insertText: t.name,
+              range,
+            });
+          }
+          for (const db of s.databases) {
+            suggestions.push({
+              label: db,
+              kind: m.languages.CompletionItemKind.Module,
+              detail: "database",
+              insertText: db,
+              range,
+            });
+          }
+        }
+        return { suggestions };
+      },
+    });
+
     // Listen for content changes from user typing
     monacoEditor.onDidChangeModelContent(() => {
       if (suppressContentChange) return;
@@ -111,6 +170,7 @@
   });
 
   onDestroy(() => {
+    completionDisposable?.dispose();
     monacoEditor?.dispose();
     unsubActiveTab?.();
   });

@@ -97,6 +97,78 @@ export namespace driver {
 	        this.referenced_tables = source["referenced_tables"];
 	    }
 	}
+	export class ExplainNode {
+	    operation: string;
+	    details?: string;
+	    table?: string;
+	    estimated_rows?: number;
+	    cost?: number;
+	    children?: ExplainNode[];
+	
+	    static createFrom(source: any = {}) {
+	        return new ExplainNode(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.operation = source["operation"];
+	        this.details = source["details"];
+	        this.table = source["table"];
+	        this.estimated_rows = source["estimated_rows"];
+	        this.cost = source["cost"];
+	        this.children = this.convertValues(source["children"], ExplainNode);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class ExplainResult {
+	    plan: ExplainNode;
+	    raw_text: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ExplainResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.plan = this.convertValues(source["plan"], ExplainNode);
+	        this.raw_text = source["raw_text"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class QueryResult {
 	    columns: string[];
 	    column_types?: string[];

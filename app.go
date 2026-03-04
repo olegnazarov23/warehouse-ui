@@ -831,6 +831,214 @@ func (a *App) DryRun(sql string) (*driver.DryRunResult, error) {
 	return a.driver.DryRun(a.ctx, sql)
 }
 
+// ExplainQuery returns a structured query execution plan.
+func (a *App) ExplainQuery(sql string) (*driver.ExplainResult, error) {
+	a.mu.RLock()
+	d := a.driver
+	a.mu.RUnlock()
+
+	if d == nil {
+		return nil, fmt.Errorf("not connected")
+	}
+
+	logger.Info("explain: sql=%.100s", sql)
+
+	// Use EXPLAIN with JSON format where supported
+	var explainSQL string
+	switch d.Type() {
+	case driver.Postgres:
+		explainSQL = "EXPLAIN (FORMAT JSON) " + sql
+	case driver.MySQL:
+		explainSQL = "EXPLAIN FORMAT=JSON " + sql
+	case driver.SQLiteType:
+		explainSQL = "EXPLAIN QUERY PLAN " + sql
+	default:
+		// Fallback: use regular EXPLAIN
+		explainSQL = "EXPLAIN " + sql
+	}
+
+	result, err := d.Execute(a.ctx, explainSQL, 1000)
+	if err != nil {
+		return nil, fmt.Errorf("explain failed: %w", err)
+	}
+
+	// Collect raw text
+	var rawLines []string
+	for _, row := range result.Rows {
+		for _, cell := range row {
+			if cell != nil {
+				rawLines = append(rawLines, fmt.Sprintf("%v", cell))
+			}
+		}
+	}
+	rawText := strings.Join(rawLines, "\n")
+
+	plan := parseExplainPlan(d.Type(), rawText, result)
+	return &driver.ExplainResult{
+		Plan:    plan,
+		RawText: rawText,
+	}, nil
+}
+
+// parseExplainPlan converts raw EXPLAIN output into a structured tree.
+func parseExplainPlan(dt driver.DriverType, rawText string, result *driver.QueryResult) driver.ExplainNode {
+	switch dt {
+	case driver.Postgres:
+		return parsePostgresExplainJSON(rawText)
+	case driver.MySQL:
+		return parseMySQLExplainJSON(rawText)
+	case driver.SQLiteType:
+		return parseSQLiteExplainPlan(result)
+	default:
+		return driver.ExplainNode{Operation: "Query Plan", Details: rawText}
+	}
+}
+
+func parsePostgresExplainJSON(raw string) driver.ExplainNode {
+	var plans []struct {
+		Plan json.RawMessage `json:"Plan"`
+	}
+	if err := json.Unmarshal([]byte(raw), &plans); err != nil || len(plans) == 0 {
+		return driver.ExplainNode{Operation: "Query Plan", Details: raw}
+	}
+	return parsePGNode(plans[0].Plan)
+}
+
+func parsePGNode(data json.RawMessage) driver.ExplainNode {
+	var node struct {
+		NodeType      string            `json:"Node Type"`
+		RelationName  string            `json:"Relation Name"`
+		PlanRows      int64             `json:"Plan Rows"`
+		TotalCost     float64           `json:"Total Cost"`
+		Plans         []json.RawMessage `json:"Plans"`
+		JoinType      string            `json:"Join Type"`
+		IndexName     string            `json:"Index Name"`
+		Filter        string            `json:"Filter"`
+		SortKey       []string          `json:"Sort Key"`
+		HashCond      string            `json:"Hash Cond"`
+		IndexCond     string            `json:"Index Cond"`
+	}
+	if err := json.Unmarshal(data, &node); err != nil {
+		return driver.ExplainNode{Operation: "Unknown"}
+	}
+
+	details := ""
+	if node.JoinType != "" {
+		details = node.JoinType
+	}
+	if node.IndexName != "" {
+		details += " idx=" + node.IndexName
+	}
+	if node.Filter != "" {
+		details += " filter=" + node.Filter
+	}
+	if node.HashCond != "" {
+		details += " on=" + node.HashCond
+	}
+	if node.IndexCond != "" {
+		details += " cond=" + node.IndexCond
+	}
+	if len(node.SortKey) > 0 {
+		details += " by=" + strings.Join(node.SortKey, ", ")
+	}
+
+	en := driver.ExplainNode{
+		Operation:     node.NodeType,
+		Table:         node.RelationName,
+		EstimatedRows: node.PlanRows,
+		Cost:          node.TotalCost,
+		Details:       strings.TrimSpace(details),
+	}
+	for _, child := range node.Plans {
+		en.Children = append(en.Children, parsePGNode(child))
+	}
+	return en
+}
+
+func parseMySQLExplainJSON(raw string) driver.ExplainNode {
+	var wrapper struct {
+		QueryBlock struct {
+			SelectID   int    `json:"select_id"`
+			Table      *struct {
+				TableName    string `json:"table_name"`
+				AccessType   string `json:"access_type"`
+				RowsExamined int64  `json:"rows_examined_per_scan"`
+				Key          string `json:"key"`
+				UsedKeyParts []string `json:"used_key_parts"`
+				AttachedCondition string `json:"attached_condition"`
+			} `json:"table"`
+			OrderingOp *struct {
+				UsingFilesort bool `json:"using_filesort"`
+			} `json:"ordering_operation"`
+		} `json:"query_block"`
+	}
+	if err := json.Unmarshal([]byte(raw), &wrapper); err != nil {
+		return driver.ExplainNode{Operation: "Query Plan", Details: raw}
+	}
+
+	root := driver.ExplainNode{Operation: "Query Block"}
+	if t := wrapper.QueryBlock.Table; t != nil {
+		details := t.AccessType
+		if t.Key != "" {
+			details += " key=" + t.Key
+		}
+		if t.AttachedCondition != "" {
+			details += " where=" + t.AttachedCondition
+		}
+		root.Children = append(root.Children, driver.ExplainNode{
+			Operation:     "Table Scan",
+			Table:         t.TableName,
+			EstimatedRows: t.RowsExamined,
+			Details:       details,
+		})
+	}
+	if wrapper.QueryBlock.OrderingOp != nil && wrapper.QueryBlock.OrderingOp.UsingFilesort {
+		root.Children = append(root.Children, driver.ExplainNode{
+			Operation: "Filesort",
+			Details:   "using temporary sort",
+		})
+	}
+	return root
+}
+
+func parseSQLiteExplainPlan(result *driver.QueryResult) driver.ExplainNode {
+	root := driver.ExplainNode{Operation: "Query Plan"}
+	// EXPLAIN QUERY PLAN returns: id, parent, notused, detail
+	nodes := map[int]*driver.ExplainNode{}
+	nodes[0] = &root
+
+	for _, row := range result.Rows {
+		if len(row) < 4 {
+			continue
+		}
+		id, _ := toInt(row[0])
+		parent, _ := toInt(row[1])
+		detail := fmt.Sprintf("%v", row[3])
+
+		node := driver.ExplainNode{Operation: detail}
+		if p, ok := nodes[parent]; ok {
+			p.Children = append(p.Children, node)
+			nodes[id] = &p.Children[len(p.Children)-1]
+		} else {
+			root.Children = append(root.Children, node)
+			nodes[id] = &root.Children[len(root.Children)-1]
+		}
+	}
+	return root
+}
+
+func toInt(v interface{}) (int, bool) {
+	switch n := v.(type) {
+	case float64:
+		return int(n), true
+	case int64:
+		return int(n), true
+	case int:
+		return n, true
+	}
+	return 0, false
+}
+
 // Execute runs a query and saves it to history.
 // Results are cached for 5 minutes to avoid re-querying identical data.
 func (a *App) Execute(sql string, limit int) (*driver.QueryResult, error) {

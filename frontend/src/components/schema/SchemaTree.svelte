@@ -3,6 +3,7 @@
   import {
     schema,
     toggleTableExpanded,
+    setTableColumns,
   } from "../../lib/stores/schema";
   import { discovery, hasDiscovery } from "../../lib/stores/discovery";
   import { connectionStatus } from "../../lib/stores/connection";
@@ -14,9 +15,8 @@
     previewTable,
   } from "../../lib/api";
   import { formatBytes, formatNumber } from "../../lib/format";
-  import type { TableInfo, Column } from "../../lib/types";
+  import type { TableInfo } from "../../lib/types";
 
-  let tableSchemas: Record<string, Column[]> = {};
   let schemaError = "";
   let manualDataset = "";
   let loadingManual = false;
@@ -30,11 +30,10 @@
       for (const db of $discovery.result!.databases) {
         for (const t of db.tables) {
           if (t.columns && t.columns.length > 0) {
-            tableSchemas[t.name] = t.columns;
+            setTableColumns(t.name, t.columns);
           }
         }
       }
-      tableSchemas = tableSchemas;
     }
   });
 
@@ -98,10 +97,9 @@
         schema.update((s) => ({ ...s, tables: discoveredDB.tables }));
         for (const t of discoveredDB.tables) {
           if (t.columns && t.columns.length > 0) {
-            tableSchemas[t.name] = t.columns;
+            setTableColumns(t.name, t.columns);
           }
         }
-        tableSchemas = tableSchemas;
         loadingTables = false;
         return;
       }
@@ -118,13 +116,12 @@
 
   async function expandTable(table: TableInfo) {
     toggleTableExpanded(table.name);
-    if (!tableSchemas[table.name]) {
+    if (!$schema.tableColumns[table.name]) {
       if ($hasDiscovery) {
         for (const db of $discovery.result!.databases) {
           const found = db.tables.find(t => t.name === table.name);
           if (found?.columns && found.columns.length > 0) {
-            tableSchemas[table.name] = found.columns;
-            tableSchemas = tableSchemas;
+            setTableColumns(table.name, found.columns);
             return;
           }
         }
@@ -133,8 +130,7 @@
       try {
         const info = await getTableSchema($schema.activeDatabase, table.name);
         if (info?.columns) {
-          tableSchemas[table.name] = info.columns;
-          tableSchemas = tableSchemas;
+          setTableColumns(table.name, info.columns);
         }
       } catch (e) {
         console.error("Failed to get table schema:", e);
@@ -259,8 +255,8 @@
               </div>
             {/if}
 
-            {#if tableSchemas[table.name]}
-              {#each tableSchemas[table.name] as col}
+            {#if $schema.tableColumns[table.name]}
+              {#each $schema.tableColumns[table.name] as col}
                 <div
                   class="flex items-center gap-2 px-2 py-1 text-[13px] hover:bg-surface-hover rounded-md"
                 >

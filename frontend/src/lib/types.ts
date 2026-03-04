@@ -90,6 +90,22 @@ export interface OptimizeResult {
   improvements: string[];
 }
 
+// ── Explain ─────────────────────────────────────────────────────────
+
+export interface ExplainNode {
+  operation: string;
+  details?: string;
+  table?: string;
+  estimated_rows?: number;
+  cost?: number;
+  children?: ExplainNode[];
+}
+
+export interface ExplainResult {
+  plan: ExplainNode;
+  raw_text: string;
+}
+
 // ── History ──────────────────────────────────────────────────────────
 
 export interface HistoryEntry {
@@ -186,6 +202,7 @@ export interface EditorTab {
   dirty: boolean;
   result?: QueryResult;
   dryRun?: DryRunResult;
+  explain?: ExplainResult;
   error?: string;
   running: boolean;
 }

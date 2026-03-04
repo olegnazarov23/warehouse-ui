@@ -75,6 +75,22 @@ type DryRunResult struct {
 	ReferencedTables []string `json:"referenced_tables,omitempty"`
 }
 
+// ExplainNode represents a node in a query execution plan tree.
+type ExplainNode struct {
+	Operation     string        `json:"operation"`
+	Details       string        `json:"details,omitempty"`
+	Table         string        `json:"table,omitempty"`
+	EstimatedRows int64         `json:"estimated_rows,omitempty"`
+	Cost          float64       `json:"cost,omitempty"`
+	Children      []ExplainNode `json:"children,omitempty"`
+}
+
+// ExplainResult holds a structured query plan.
+type ExplainResult struct {
+	Plan    ExplainNode `json:"plan"`
+	RawText string      `json:"raw_text"`
+}
+
 // Driver is the interface every database driver must implement.
 type Driver interface {
 	// Connection lifecycle

@@ -1,11 +1,12 @@
 import { writable, derived } from "svelte/store";
-import type { TableInfo } from "../types";
+import type { TableInfo, Column } from "../types";
 
 export interface SchemaState {
   databases: string[];
   activeDatabase: string;
   tables: TableInfo[];
   expandedTables: Set<string>;
+  tableColumns: Record<string, Column[]>;
   loading: boolean;
 }
 
@@ -14,6 +15,7 @@ export const schema = writable<SchemaState>({
   activeDatabase: "",
   tables: [],
   expandedTables: new Set(),
+  tableColumns: {},
   loading: false,
 });
 
@@ -31,4 +33,11 @@ export function toggleTableExpanded(tableName: string) {
     }
     return { ...s, expandedTables: next };
   });
+}
+
+export function setTableColumns(tableName: string, columns: Column[]) {
+  schema.update((s) => ({
+    ...s,
+    tableColumns: { ...s.tableColumns, [tableName]: columns },
+  }));
 }

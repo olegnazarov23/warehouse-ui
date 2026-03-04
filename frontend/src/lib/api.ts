@@ -13,6 +13,7 @@ import type {
   Conversation,
   DiscoveryResult,
   DryRunResult,
+  ExplainResult,
   HistoryEntry,
   HistoryStats,
   OptimizeResult,
@@ -177,6 +178,11 @@ export async function execute(sql: string, limit: number): Promise<QueryResult> 
 export async function cancelQuery(): Promise<void> {
   const app = await getApp();
   return app.CancelQuery();
+}
+
+export async function explainQuery(sql: string): Promise<ExplainResult> {
+  const app = await getApp();
+  return app.ExplainQuery(sql);
 }
 
 // ── History ──────────────────────────────────────────────────────────

@@ -17,6 +17,7 @@
     "vite": "^6.1.0"
   },
   "dependencies": {
+    "chart.js": "^4.5.1",
     "lucide-svelte": "^0.474.0",
     "monaco-editor": "^0.52.2",
     "sql-formatter": "^15.4.0",

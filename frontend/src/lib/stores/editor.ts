@@ -1,5 +1,5 @@
 import { writable, derived } from "svelte/store";
-import type { EditorTab, QueryResult, DryRunResult } from "../types";
+import type { EditorTab, QueryResult, DryRunResult, ExplainResult } from "../types";
 
 let nextTabId = 1;
 
@@ -79,6 +79,15 @@ export function setTabDryRun(id: string, dryRun: DryRunResult) {
     ...e,
     tabs: e.tabs.map((t) =>
       t.id === id ? { ...t, dryRun } : t
+    ),
+  }));
+}
+
+export function setTabExplain(id: string, explain: ExplainResult) {
+  editor.update((e) => ({
+    ...e,
+    tabs: e.tabs.map((t) =>
+      t.id === id ? { ...t, explain } : t
     ),
   }));
 }

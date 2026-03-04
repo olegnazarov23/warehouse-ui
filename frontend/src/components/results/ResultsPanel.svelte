@@ -1,15 +1,39 @@
 <script lang="ts">
-  import type { EditorTab } from "../../lib/types";
+  import type { EditorTab, ExplainNode } from "../../lib/types";
   import { formatBytes, formatCost, formatDuration, formatNumber } from "../../lib/format";
   import { currentDriverType } from "../../lib/stores/connection";
   import { analyzeSql } from "../../lib/sql-hints";
+  import { addTab } from "../../lib/stores/editor";
   import DataGrid from "./DataGrid.svelte";
+  import ExplainTree from "./ExplainTree.svelte";
+  import ChartPanel from "./ChartPanel.svelte";
+  import DataDiff from "./DataDiff.svelte";
 
   export let tab: EditorTab | undefined;
 
-  let activePane: "data" | "messages" = "data";
+  let activePane: "data" | "messages" | "explain" | "chart" | "diff" = "data";
 
   $: sqlHints = tab?.sql ? analyzeSql(tab.sql, $currentDriverType) : [];
+
+  // Detect if this tab is a preview (editable)
+  $: isPreview = tab?.title?.startsWith("Preview: ") ?? false;
+  $: previewTable = isPreview ? tab!.title!.replace("Preview: ", "") : "";
+  // Use first column as PK heuristic for preview tables
+  $: previewPKs = isPreview && tab?.result?.columns?.length ? [tab.result.columns[0]] : [];
+
+  function handleCellEdit(e: CustomEvent<{ sql: string }>) {
+    addTab("UPDATE", e.detail.sql);
+  }
+
+  function getMaxCost(node: ExplainNode): number {
+    let max = node.cost ?? 0;
+    if (node.children) {
+      for (const child of node.children) {
+        max = Math.max(max, getMaxCost(child));
+      }
+    }
+    return max;
+  }
 </script>
 
 <div class="flex flex-col h-full bg-bg">
@@ -33,6 +57,28 @@
           {sqlHints.length + (tab?.dryRun?.warnings?.length ?? 0)}
         </span>
       {/if}
+    </button>
+    {#if tab?.explain}
+      <button
+        class="text-sm font-medium {activePane === 'explain' ? 'text-text' : 'text-text-dim hover:text-text'}"
+        on:click={() => (activePane = "explain")}
+      >
+        Explain
+      </button>
+    {/if}
+    {#if tab?.result}
+      <button
+        class="text-sm font-medium {activePane === 'chart' ? 'text-text' : 'text-text-dim hover:text-text'}"
+        on:click={() => (activePane = "chart")}
+      >
+        Chart
+      </button>
+    {/if}
+    <button
+      class="text-sm font-medium {activePane === 'diff' ? 'text-text' : 'text-text-dim hover:text-text'}"
+      on:click={() => (activePane = "diff")}
+    >
+      Diff
     </button>
 
     <div class="flex-1"></div>
@@ -82,12 +128,44 @@
           columns={tab.result.columns}
           columnTypes={tab.result.column_types}
           rows={tab.result.rows}
+          editable={isPreview}
+          sourceTable={previewTable}
+          primaryKeys={previewPKs}
+          on:edit={handleCellEdit}
         />
       {:else}
         <div class="flex items-center justify-center h-full text-text-muted text-sm">
           Run a query to see results
         </div>
       {/if}
+    {:else if activePane === "explain"}
+      {#if tab?.explain}
+        <div class="p-4">
+          <ExplainTree node={tab.explain.plan} maxCost={getMaxCost(tab.explain.plan)} />
+          <details class="mt-4">
+            <summary class="text-xs text-text-muted cursor-pointer hover:text-text-dim">Raw EXPLAIN output</summary>
+            <pre class="mt-2 p-3 rounded-lg bg-surface border border-border text-xs text-text-dim font-mono whitespace-pre-wrap overflow-auto max-h-64">{tab.explain.raw_text}</pre>
+          </details>
+        </div>
+      {:else}
+        <div class="flex items-center justify-center h-full text-text-muted text-sm">
+          Click "Explain" in the toolbar to see the query plan
+        </div>
+      {/if}
+    {:else if activePane === "chart"}
+      {#if tab?.result}
+        <ChartPanel
+          columns={tab.result.columns}
+          columnTypes={tab.result.column_types ?? []}
+          rows={tab.result.rows}
+        />
+      {:else}
+        <div class="flex items-center justify-center h-full text-text-muted text-sm">
+          Run a query to see charts
+        </div>
+      {/if}
+    {:else if activePane === "diff"}
+      <DataDiff />
     {:else}
       <!-- Messages / Warnings / Hints -->
       <div class="p-5 space-y-3 text-sm">

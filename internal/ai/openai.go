@@ -146,11 +146,11 @@ func ExtractSQL(response string) string {
 	if start == -1 {
 		return ""
 	}
-	start = strings.Index(response[start:], "\n")
-	if start == -1 {
+	nlPos := strings.Index(response[start:], "\n")
+	if nlPos == -1 {
 		return ""
 	}
-	remaining := response[start+1:]
+	remaining := response[start+nlPos+1:]
 	end := strings.Index(remaining, "```")
 	if end == -1 {
 		return strings.TrimSpace(remaining)
