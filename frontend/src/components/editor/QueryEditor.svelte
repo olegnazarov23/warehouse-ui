@@ -103,6 +103,9 @@
       if (tab.id !== currentTabId) {
         currentTabId = tab.id;
         setMonacoValue(tab.sql);
+      } else {
+        // Same tab but SQL changed externally (e.g. Format button, history click)
+        setMonacoValue(tab.sql);
       }
     });
   });
