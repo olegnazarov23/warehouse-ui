@@ -40,7 +40,7 @@ Or build from source (see below).
 - **Built-in templates** — Starter queries for each database type
 - **Export** — CSV, JSON, and Excel (.xlsx) with native file dialogs
 - **SQL hints** — Static analyzer suggests common query improvements (missing LIMIT, SELECT *, leading wildcards, etc.)
-- **Code repo scanning** — Link local codebases so AI learns your query patterns, ORM models, and migrations
+- **Deep codebase context** — Link local repos and the AI loads full source files (models, services, controllers, helpers) to understand your business logic, entity relationships, and data flows — ask "find offers in campaigns" and it traces through your code to write the right query
 - **Auto-detect connections** — Scans .env files and Docker Compose for database connections, offers one-click Test & Add
 - **Auto-discovery** — One-click "Discover & Connect" scans all datasets/tables and generates AI sample queries
 - **Encrypted credentials** — API keys and connection passwords are AES-256-GCM encrypted at rest
@@ -135,14 +135,16 @@ Go (Wails v2)           Svelte 5 + TailwindCSS 4
 | MongoDB | Done | No | Shell-style queries (find/aggregate/distinct), document flattening, SSH tunnel |
 | ClickHouse | Planned | Yes | Coming soon |
 
-## Code Repository Scanning
+## Deep Codebase Context
 
-Link local code repositories when setting up a connection. The scanner:
+Link local code repositories when setting up a connection. The AI loads your **full source files** — not just keyword-matched snippets — so it understands your entire application:
 
-1. **Extracts SQL patterns** from Go, Python, TypeScript, Java, Ruby, and other code files
-2. **Detects database connections** in `.env` files (connection strings, `DATABASE_URL`, etc.)
-3. **Finds Docker databases** in `docker-compose.yml` (postgres, mysql, mongo, redis, clickhouse)
-4. **Injects context into AI** — the assistant sees your actual query patterns, ORM models, and migrations
+1. **Loads full files** prioritized by relevance: models/schemas first, then services/controllers, then helpers/utils, then everything else (up to 300KB budget)
+2. **Understands relationships** — traces entity models, business logic, data flows, and how your code interacts with the database
+3. **Detects database connections** in `.env` files (connection strings, `DATABASE_URL`, etc.)
+4. **Finds Docker databases** in `docker-compose.yml` (postgres, mysql, mongo, redis, clickhouse)
+
+Ask the AI business-level questions like "find offers in campaigns" and it will trace through your model definitions and service logic to generate the correct query.
 
 Detected connections can be tested and added as saved connections with one click.
 
