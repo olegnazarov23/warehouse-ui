@@ -183,7 +183,8 @@ jobs:
         run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
       - name: Update SKILL.md version
-        run: sed -i "s/^version:.*/version: ${{ steps.version.outputs.version }}/" openclaw/SKILL.md
+        run: |
+          sed -i "s/^version:.*/version: ${{ steps.version.outputs.version }}/" openclaw/SKILL.md
 
       - name: Publish skill to ClawHub
         env:
