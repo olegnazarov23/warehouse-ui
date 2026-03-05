@@ -22,8 +22,20 @@
   let loadingManual = false;
   let loadingTables = false;
   let loadingColumn: string | null = null;
+  let lastConnId = "";
 
   onMount(() => {
+    lastConnId = $connectionStatus.id ?? "";
+    initialLoad();
+  });
+
+  // Re-load schema when connection changes (Shell stays mounted)
+  $: if ($connectionStatus.connected && $connectionStatus.id && $connectionStatus.id !== lastConnId) {
+    lastConnId = $connectionStatus.id;
+    initialLoad();
+  }
+
+  function initialLoad() {
     if (!$hasDiscovery) {
       loadSchema();
     } else {
@@ -35,7 +47,7 @@
         }
       }
     }
-  });
+  }
 
   async function loadSchema() {
     schema.update((s) => ({ ...s, loading: true }));

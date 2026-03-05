@@ -41,3 +41,14 @@ export function setTableColumns(tableName: string, columns: Column[]) {
     tableColumns: { ...s.tableColumns, [tableName]: columns },
   }));
 }
+
+export function resetSchema() {
+  schema.set({
+    databases: [],
+    activeDatabase: "",
+    tables: [],
+    expandedTables: new Set(),
+    tableColumns: {},
+    loading: false,
+  });
+}

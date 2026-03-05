@@ -138,6 +138,47 @@ The AI sees your connected schema, current editor state, query results, and link
 
 ---
 
+## CLI Mode
+
+Warehouse UI also works as a headless CLI tool for scripting, automation, and [OpenClaw](https://openclaw.ai) AI agents.
+
+```bash
+# Connect to a database
+warehouse-ui connect --url "postgres://user:pass@localhost:5432/mydb"
+warehouse-ui connect --type sqlite --database ./data.db
+
+# Run queries (output is JSON)
+warehouse-ui query "SELECT * FROM users LIMIT 10"
+warehouse-ui query --file report.sql --limit 1000
+
+# Explore schema
+warehouse-ui schema list-tables --database mydb
+warehouse-ui schema describe users --database mydb
+
+# Cost estimation (BigQuery)
+warehouse-ui dry-run "SELECT * FROM events WHERE date > '2024-01-01'"
+
+# AI-powered natural language to SQL
+export OPENAI_API_KEY="sk-..."
+warehouse-ui ai "top 10 customers by revenue" --execute
+
+# Check status / disconnect
+warehouse-ui status
+warehouse-ui disconnect
+```
+
+All commands output JSON to stdout. Connection state persists between invocations.
+
+### OpenClaw Skill
+
+Warehouse UI is available as an [OpenClaw skill](https://clawhub.ai) so AI agents can query your databases:
+
+```bash
+clawhub install warehouse-ui
+```
+
+---
+
 ## Architecture
 
 ```

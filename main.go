@@ -17,14 +17,19 @@ import (
 	_ "warehouse-ui/internal/ai"
 )
 
+// Version is set at build time via -ldflags "-X main.Version=..."
+var Version = "dev"
+
 //go:embed all:frontend/dist
 var assets embed.FS
 
 func main() {
-	// TODO: Add "serve" subcommand for HTTP server mode
-	if len(os.Args) > 1 && os.Args[1] == "serve" {
-		fmt.Println("Server mode not yet implemented. Use desktop mode for now.")
-		os.Exit(1)
+	// CLI subcommands: connect, query, schema, etc.
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "connect", "disconnect", "status", "query", "schema", "dry-run", "ai", "version":
+			os.Exit(cliRun(os.Args[1], os.Args[2:]))
+		}
 	}
 
 	app := NewApp()

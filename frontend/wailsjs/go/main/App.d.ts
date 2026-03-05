@@ -4,6 +4,7 @@ import {driver} from '../models';
 import {main} from '../models';
 import {store} from '../models';
 import {ai} from '../models';
+import {context} from '../models';
 
 export function AiChat(arg1:string,arg2:string,arg3:string):Promise<void>;
 
@@ -91,6 +92,8 @@ export function PickFolder(arg1:string):Promise<string>;
 
 export function PreviewTable(arg1:string,arg2:string,arg3:number):Promise<driver.QueryResult>;
 
+export function ReconnectFromStore(arg1:string):Promise<void>;
+
 export function RenameAiConversation(arg1:string,arg2:string):Promise<void>;
 
 export function SaveConnection(arg1:driver.ConnectionConfig):Promise<void>;
@@ -104,5 +107,9 @@ export function ScanCodeFull(arg1:Array<string>):Promise<main.CodeContext>;
 export function SetAiSettings(arg1:string,arg2:string,arg3:string,arg4:string):Promise<void>;
 
 export function SetCodePaths(arg1:Array<string>):Promise<void>;
+
+export function ShutdownHeadless():Promise<void>;
+
+export function StartupHeadless(arg1:context.Context):Promise<void>;
 
 export function TestConnection(arg1:driver.ConnectionConfig):Promise<void>;

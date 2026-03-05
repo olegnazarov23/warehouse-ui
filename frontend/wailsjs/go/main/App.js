@@ -174,6 +174,10 @@ export function PreviewTable(arg1, arg2, arg3) {
   return window['go']['main']['App']['PreviewTable'](arg1, arg2, arg3);
 }
 
+export function ReconnectFromStore(arg1) {
+  return window['go']['main']['App']['ReconnectFromStore'](arg1);
+}
+
 export function RenameAiConversation(arg1, arg2) {
   return window['go']['main']['App']['RenameAiConversation'](arg1, arg2);
 }
@@ -200,6 +204,14 @@ export function SetAiSettings(arg1, arg2, arg3, arg4) {
 
 export function SetCodePaths(arg1) {
   return window['go']['main']['App']['SetCodePaths'](arg1);
+}
+
+export function ShutdownHeadless() {
+  return window['go']['main']['App']['ShutdownHeadless']();
+}
+
+export function StartupHeadless(arg1) {
+  return window['go']['main']['App']['StartupHeadless'](arg1);
 }
 
 export function TestConnection(arg1) {

@@ -5,6 +5,7 @@
   import { connectionStatus, isConnected } from "./lib/stores/connection";
   import { clearChat, ai, setConversations, setActiveConversation } from "./lib/stores/ai";
   import { saveTabs, restoreTabs, resetTabs } from "./lib/stores/editor";
+  import { resetSchema } from "./lib/stores/schema";
   import { getConnectionStatus, listAiConversations, getAiMessages } from "./lib/api";
   import type { ChatMessage } from "./lib/types";
 
@@ -19,6 +20,8 @@
         saveTabs(lastConnectionId);
       }
       lastConnectionId = status.id;
+      // Clear stale schema from previous connection
+      resetSchema();
       // Restore tabs for the new connection, or reset if none saved
       restoreTabs(status.id);
       // Reload conversations for the new connection

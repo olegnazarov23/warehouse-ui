@@ -2799,6 +2799,58 @@ func (a *App) GetLogPath() string {
 	return logger.Path()
 }
 
+// StartupHeadless initializes the App for CLI use (no Wails runtime).
+func (a *App) StartupHeadless(ctx context.Context) error {
+	a.ctx = ctx
+	dataDir := filepath.Join(userDataDir(), "warehouse-ui")
+	logger.Init(dataDir)
+
+	s, err := store.New(dataDir)
+	if err != nil {
+		return fmt.Errorf("init store: %w", err)
+	}
+	a.store = s
+	a.queryCache = make(map[string]*queryCacheEntry)
+	a.loadAISettings()
+	return nil
+}
+
+// ShutdownHeadless cleans up resources for CLI mode.
+func (a *App) ShutdownHeadless() {
+	if a.driver != nil {
+		a.driver.Disconnect()
+	}
+	if a.sshTunnel != nil {
+		a.sshTunnel.Close()
+	}
+	if a.store != nil {
+		a.store.Close()
+	}
+	logger.Close()
+}
+
+// ReconnectFromStore loads a saved connection by ID and connects.
+func (a *App) ReconnectFromStore(connID string) error {
+	conns, err := a.store.ListConnections()
+	if err != nil {
+		return fmt.Errorf("list connections: %w", err)
+	}
+	for _, c := range conns {
+		if c.ID == connID {
+			var cfg driver.ConnectionConfig
+			if err := json.Unmarshal([]byte(c.ConfigJSON), &cfg); err != nil {
+				return fmt.Errorf("unmarshal config: %w", err)
+			}
+			cfg.ID = c.ID
+			cfg.Name = c.Name
+			cfg.Type = driver.DriverType(c.DriverType)
+			_, err := a.Connect(cfg)
+			return err
+		}
+	}
+	return fmt.Errorf("connection %q not found", connID)
+}
+
 // splitHostPort splits a host string into host and port parts.
 // If no port is present, defaultP is used.
 func splitHostPort(hostStr, defaultP string) (string, string) {
