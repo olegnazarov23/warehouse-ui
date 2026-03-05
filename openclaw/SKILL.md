@@ -103,6 +103,19 @@ warehouse-ui ai "show me the top 10 customers by total revenue"
 warehouse-ui ai "find all orders from last week that were cancelled" --execute
 ```
 
+## List Saved Connections
+
+```bash
+warehouse-ui connections
+```
+
+## Query History
+
+```bash
+warehouse-ui history --limit 10
+warehouse-ui history --search "SELECT"
+```
+
 ## Disconnect
 
 ```bash
@@ -111,12 +124,18 @@ warehouse-ui disconnect
 
 ## Output Format
 
-All commands output JSON to stdout. Errors are JSON on stderr with exit code 1.
+All commands output JSON to stdout by default. Add `--format table` for human-readable output. Errors are JSON on stderr with exit code 1.
+
+## Environment Variables
+
+- `DATABASE_URL` — Auto-connect without explicit `connect` step (supports postgres://, mysql://, sqlite://, mongodb://)
+- `OPENAI_API_KEY` — Required for `ai` command with OpenAI
+- `ANTHROPIC_API_KEY` — Required for `ai` command with Anthropic
 
 ## Tips
 
-- Always `connect` before running queries — connection state persists between commands
+- Set `DATABASE_URL` to skip the `connect` step entirely
 - Use `schema describe <table>` to understand table structure before querying
 - Use `dry-run` on BigQuery to check costs before executing expensive queries
-- The `ai` command requires OPENAI_API_KEY or ANTHROPIC_API_KEY environment variable
 - Use `--limit` to control result size for large tables
+- Use `connections` to see databases already configured in the desktop app

@@ -857,6 +857,13 @@ func (a *App) ParseConnectionString(connStr, driverHint string) (*driver.Connect
 				cfg.Password, _ = u.User.Password()
 			}
 			cfg.Options["connection_string"] = connStr
+		case u.Scheme == "sqlite" || u.Scheme == "sqlite3":
+			cfg.Type = driver.SQLiteType
+			// sqlite:///path/to/file or sqlite://path/to/file
+			cfg.Database = u.Host + u.Path
+			if cfg.Database == "" {
+				return nil, fmt.Errorf("sqlite URL must include a file path")
+			}
 		case u.Scheme == "clickhouse":
 			cfg.Type = driver.ClickHouse
 			cfg.Host = u.Host

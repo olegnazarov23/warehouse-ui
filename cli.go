@@ -8,16 +8,23 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"text/tabwriter"
 
 	"warehouse-ui/internal/driver"
 
 	"github.com/google/uuid"
 )
 
+// Global output format flag (json or table).
+var outputFormat = "json"
+
 // cliRun dispatches CLI subcommands. Returns exit code (0 = success, 1 = error).
 func cliRun(cmd string, args []string) int {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
+
+	// Extract --format flag before subcommand parsing
+	args = extractFormatFlag(args)
 
 	switch cmd {
 	case "connect":
@@ -34,6 +41,12 @@ func cliRun(cmd string, args []string) int {
 		return cmdDryRun(ctx, args)
 	case "ai":
 		return cmdAI(ctx, args)
+	case "connections":
+		return cmdConnections(ctx, args)
+	case "history":
+		return cmdHistory(ctx, args)
+	case "mcp":
+		return cmdMCP(ctx)
 	case "version":
 		return cmdVersion()
 	default:
@@ -42,9 +55,29 @@ func cliRun(cmd string, args []string) int {
 	}
 }
 
+// extractFormatFlag pulls --format from args and sets outputFormat global.
+func extractFormatFlag(args []string) []string {
+	var filtered []string
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--format" && i+1 < len(args) {
+			outputFormat = args[i+1]
+			i++
+		} else if strings.HasPrefix(args[i], "--format=") {
+			outputFormat = strings.TrimPrefix(args[i], "--format=")
+		} else {
+			filtered = append(filtered, args[i])
+		}
+	}
+	return filtered
+}
+
 // --- Helpers ---
 
 func cliJSON(v interface{}) {
+	if outputFormat == "table" {
+		cliTable(v)
+		return
+	}
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(v)
@@ -53,6 +86,77 @@ func cliJSON(v interface{}) {
 func cliError(format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
 	_ = json.NewEncoder(os.Stderr).Encode(map[string]string{"error": msg})
+}
+
+// cliTable renders data as a human-readable table.
+func cliTable(v interface{}) {
+	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	defer w.Flush()
+
+	switch data := v.(type) {
+	case *driver.QueryResult:
+		if data == nil || len(data.Columns) == 0 {
+			fmt.Fprintln(w, "(no results)")
+			return
+		}
+		// Header
+		fmt.Fprintln(w, strings.Join(data.Columns, "\t"))
+		// Separator
+		seps := make([]string, len(data.Columns))
+		for i, col := range data.Columns {
+			seps[i] = strings.Repeat("-", max(len(col), 4))
+		}
+		fmt.Fprintln(w, strings.Join(seps, "\t"))
+		// Rows ([][]interface{})
+		for _, row := range data.Rows {
+			vals := make([]string, len(data.Columns))
+			for i := range data.Columns {
+				if i < len(row) {
+					vals[i] = fmt.Sprintf("%v", row[i])
+				}
+			}
+			fmt.Fprintln(w, strings.Join(vals, "\t"))
+		}
+		fmt.Fprintf(w, "\n(%d rows, %s)\n", data.RowCount, formatDurationMs(float64(data.DurationMs)))
+
+	case []driver.TableInfo:
+		fmt.Fprintln(w, "TABLE\tROWS\tCOLUMNS")
+		fmt.Fprintln(w, "-----\t----\t-------")
+		for _, t := range data {
+			fmt.Fprintf(w, "%s\t%d\t%d\n", t.Name, t.RowCount, len(t.Columns))
+		}
+
+	case *driver.TableInfo:
+		if data == nil {
+			return
+		}
+		fmt.Fprintf(w, "Table: %s (%d rows)\n\n", data.Name, data.RowCount)
+		fmt.Fprintln(w, "COLUMN\tTYPE\tNULLABLE")
+		fmt.Fprintln(w, "------\t----\t--------")
+		for _, c := range data.Columns {
+			fmt.Fprintf(w, "%s\t%s\t%v\n", c.Name, c.Type, c.Nullable)
+		}
+
+	case []string:
+		for _, s := range data {
+			fmt.Fprintln(w, s)
+		}
+
+	default:
+		// Fallback: marshal to JSON if table format not supported for this type
+		b, _ := json.MarshalIndent(v, "", "  ")
+		fmt.Fprintln(os.Stdout, string(b))
+	}
+}
+
+func formatDurationMs(ms float64) string {
+	if ms < 1 {
+		return "<1ms"
+	}
+	if ms < 1000 {
+		return fmt.Sprintf("%.0fms", ms)
+	}
+	return fmt.Sprintf("%.2fs", ms/1000)
 }
 
 func initHeadlessApp(ctx context.Context) (*App, error) {
@@ -69,6 +173,22 @@ func reconnectActive(app *App) error {
 		return fmt.Errorf("not connected — run 'warehouse-ui connect' first")
 	}
 	return app.ReconnectFromStore(connID)
+}
+
+// reconnectActiveOrEnv tries DATABASE_URL env var first, then stored connection.
+func reconnectActiveOrEnv(app *App) error {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL != "" {
+		cfg, err := app.ParseConnectionString(dbURL, "")
+		if err != nil {
+			return fmt.Errorf("invalid DATABASE_URL: %v", err)
+		}
+		cfg.ID = "env-database-url"
+		cfg.Name = "DATABASE_URL"
+		_, err = app.Connect(*cfg)
+		return err
+	}
+	return reconnectActive(app)
 }
 
 func parseOptionFlags(args []string) map[string]string {
@@ -244,7 +364,7 @@ func cmdQuery(ctx context.Context, args []string) int {
 	}
 	defer app.ShutdownHeadless()
 
-	if err := reconnectActive(app); err != nil {
+	if err := reconnectActiveOrEnv(app); err != nil {
 		cliError("%v", err)
 		return 1
 	}
@@ -283,7 +403,7 @@ func cmdSchema(ctx context.Context, args []string) int {
 	}
 	defer app.ShutdownHeadless()
 
-	if err := reconnectActive(app); err != nil {
+	if err := reconnectActiveOrEnv(app); err != nil {
 		cliError("%v", err)
 		return 1
 	}
@@ -352,7 +472,7 @@ func cmdDryRun(ctx context.Context, args []string) int {
 	}
 	defer app.ShutdownHeadless()
 
-	if err := reconnectActive(app); err != nil {
+	if err := reconnectActiveOrEnv(app); err != nil {
 		cliError("%v", err)
 		return 1
 	}
@@ -390,7 +510,7 @@ func cmdAI(ctx context.Context, args []string) int {
 	}
 	defer app.ShutdownHeadless()
 
-	if err := reconnectActive(app); err != nil {
+	if err := reconnectActiveOrEnv(app); err != nil {
 		cliError("%v", err)
 		return 1
 	}
@@ -417,6 +537,105 @@ func cmdAI(ctx context.Context, args []string) int {
 	}
 
 	cliJSON(result)
+	return 0
+}
+
+func cmdConnections(ctx context.Context, args []string) int {
+	app, err := initHeadlessApp(ctx)
+	if err != nil {
+		cliError("init failed: %v", err)
+		return 1
+	}
+	defer app.ShutdownHeadless()
+
+	conns, err := app.ListSavedConnections()
+	if err != nil {
+		cliError("list connections: %v", err)
+		return 1
+	}
+
+	activeID, _ := app.store.GetSetting("cli_active_connection")
+
+	if outputFormat == "table" {
+		w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+		fmt.Fprintln(w, "ACTIVE\tID\tNAME\tTYPE\tCREATED")
+		fmt.Fprintln(w, "------\t--\t----\t----\t-------")
+		for _, c := range conns {
+			active := ""
+			if c.ID == activeID {
+				active = "*"
+			}
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", active, c.ID[:8], c.Name, c.DriverType, c.CreatedAt)
+		}
+		w.Flush()
+		return 0
+	}
+
+	type connInfo struct {
+		ID         string `json:"id"`
+		Name       string `json:"name"`
+		DriverType string `json:"driver_type"`
+		Active     bool   `json:"active"`
+		CreatedAt  string `json:"created_at"`
+	}
+	var out []connInfo
+	for _, c := range conns {
+		out = append(out, connInfo{
+			ID:         c.ID,
+			Name:       c.Name,
+			DriverType: c.DriverType,
+			Active:     c.ID == activeID,
+			CreatedAt:  c.CreatedAt,
+		})
+	}
+	cliJSON(out)
+	return 0
+}
+
+func cmdHistory(ctx context.Context, args []string) int {
+	fs := flag.NewFlagSet("history", flag.ContinueOnError)
+	search := fs.String("search", "", "Filter by SQL text")
+	limit := fs.Int("limit", 20, "Number of entries")
+
+	if err := fs.Parse(args); err != nil {
+		cliError("invalid flags: %v", err)
+		return 1
+	}
+
+	app, err := initHeadlessApp(ctx)
+	if err != nil {
+		cliError("init failed: %v", err)
+		return 1
+	}
+	defer app.ShutdownHeadless()
+
+	entries, err := app.GetHistory(*search, *limit, 0)
+	if err != nil {
+		cliError("get history: %v", err)
+		return 1
+	}
+
+	if outputFormat == "table" {
+		w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+		fmt.Fprintln(w, "STATUS\tDRIVER\tDURATION\tSQL")
+		fmt.Fprintln(w, "------\t------\t--------\t---")
+		for _, e := range entries {
+			dur := ""
+			if e.DurationMs != nil {
+				dur = formatDurationMs(float64(*e.DurationMs))
+			}
+			sql := e.SQL
+			if len(sql) > 80 {
+				sql = sql[:77] + "..."
+			}
+			sql = strings.ReplaceAll(sql, "\n", " ")
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", e.Status, e.DriverType, dur, sql)
+		}
+		w.Flush()
+		return 0
+	}
+
+	cliJSON(entries)
 	return 0
 }
 

@@ -7,6 +7,7 @@
 <p align="center">
   <a href="https://github.com/olegnazarov23/warehouse-ui/releases/latest"><strong>Download for macOS</strong></a> &nbsp;·&nbsp;
   <a href="https://github.com/olegnazarov23/warehouse-ui/releases/latest"><strong>Download for Windows</strong></a> &nbsp;·&nbsp;
+  <a href="https://github.com/olegnazarov23/warehouse-ui/releases/latest"><strong>Download for Linux</strong></a> &nbsp;·&nbsp;
   <a href="#build-from-source">Build from source</a>
 </p>
 
@@ -86,6 +87,7 @@ Column types, row counts, execution timing — all at a glance.
 |----------|----------|
 | macOS (Intel + Apple Silicon) | [warehouse-ui-macos-universal.dmg](https://github.com/olegnazarov23/warehouse-ui/releases/latest) |
 | Windows (64-bit) | [warehouse-ui-windows-amd64-installer.exe](https://github.com/olegnazarov23/warehouse-ui/releases/latest) |
+| Linux (64-bit) | [warehouse-ui-linux-amd64.tar.gz](https://github.com/olegnazarov23/warehouse-ui/releases/latest) |
 
 1. Install and launch
 2. Add a database connection
@@ -140,16 +142,21 @@ The AI sees your connected schema, current editor state, query results, and link
 
 ## CLI Mode
 
-Warehouse UI also works as a headless CLI tool for scripting, automation, and [OpenClaw](https://openclaw.ai) AI agents.
+Warehouse UI also works as a headless CLI tool for scripting, automation, and AI agents.
 
 ```bash
 # Connect to a database
 warehouse-ui connect --url "postgres://user:pass@localhost:5432/mydb"
 warehouse-ui connect --type sqlite --database ./data.db
 
-# Run queries (output is JSON)
+# Or skip connect entirely with DATABASE_URL
+export DATABASE_URL="postgres://user:pass@localhost:5432/mydb"
+warehouse-ui query "SELECT * FROM users LIMIT 10"
+
+# Run queries (output is JSON by default)
 warehouse-ui query "SELECT * FROM users LIMIT 10"
 warehouse-ui query --file report.sql --limit 1000
+warehouse-ui query --format table "SELECT * FROM users"
 
 # Explore schema
 warehouse-ui schema list-tables --database mydb
@@ -162,12 +169,36 @@ warehouse-ui dry-run "SELECT * FROM events WHERE date > '2024-01-01'"
 export OPENAI_API_KEY="sk-..."
 warehouse-ui ai "top 10 customers by revenue" --execute
 
-# Check status / disconnect
-warehouse-ui status
+# Manage connections & history
+warehouse-ui connections                    # list saved connections
+warehouse-ui history --limit 10             # recent query history
+warehouse-ui status                         # current connection info
 warehouse-ui disconnect
 ```
 
-All commands output JSON to stdout. Connection state persists between invocations.
+All commands output JSON to stdout by default. Add `--format table` for human-readable output. Connection state persists between invocations.
+
+### MCP Server (Claude Desktop, Cursor, Windsurf)
+
+Warehouse UI includes a built-in [MCP](https://modelcontextprotocol.io) server so AI tools can query your databases directly.
+
+Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "warehouse-ui": {
+      "command": "/path/to/warehouse-ui",
+      "args": ["mcp"],
+      "env": {
+        "DATABASE_URL": "postgres://user:pass@localhost:5432/mydb"
+      }
+    }
+  }
+}
+```
+
+The MCP server exposes 10 tools: `connect`, `disconnect`, `status`, `execute_query`, `list_databases`, `list_tables`, `describe_table`, `dry_run`, `list_connections`, and `query_history`.
 
 ### OpenClaw Skill
 

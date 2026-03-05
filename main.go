@@ -27,7 +27,7 @@ func main() {
 	// CLI subcommands: connect, query, schema, etc.
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
-		case "connect", "disconnect", "status", "query", "schema", "dry-run", "ai", "version":
+		case "connect", "disconnect", "status", "query", "schema", "dry-run", "ai", "connections", "history", "mcp", "version":
 			os.Exit(cliRun(os.Args[1], os.Args[2:]))
 		}
 	}
