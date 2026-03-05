@@ -32,8 +32,9 @@ Or build from source (see below).
 - **Data diff** — Compare two query results side-by-side with color-coded changes
 - **Cost projection** — Dry-run queries on BigQuery/ClickHouse to see estimated cost, rows, and referenced tables before execution
 - **AI assistant** — Pluggable LLM (OpenAI, Anthropic, Ollama, or any local model). Schema-aware SQL generation, query explanation, and optimization
+- **Agentic AI with tool-use** — AI actively searches your codebase (grep, file read), executes SQL queries, and analyzes execution plans during conversations — not just static context
 - **AI query optimizer** — One-click iterative optimization: AI suggests improvements, each verified by dry-run
-- **Multi-chat with memory** — Persistent AI conversations with auto-generated titles (ChatGPT-style)
+- **Multi-chat with memory** — Persistent AI conversations per connection with auto-generated titles (ChatGPT-style)
 - **Resizable panels** — Drag to resize sidebar, editor/results split, and AI panel
 - **Query history** — Auto-saved with execution stats (duration, cost, bytes, rows)
 - **Saved queries** — Organize and share queries with URL slugs
@@ -48,7 +49,20 @@ Or build from source (see below).
 
 ## Screenshots
 
-_Coming soon_
+### Schema browser + AI suggestions
+Browse your database schema and get AI-generated sample queries tailored to your data.
+
+![Schema browser and AI suggestions](screenshots/schema-ai-suggestions.png)
+
+### Query results + chart visualization
+Run queries and visualize results as bar, line, or pie charts — auto-detected axes.
+
+![Chart visualization](screenshots/chart-visualization.png)
+
+### Query results table
+Sortable data grid with column types, row counts, and execution timing.
+
+![Query results](screenshots/query-results.png)
 
 ## Quick Start
 
