@@ -78,7 +78,22 @@ jobs:
 
       - name: Install NSIS
         run: |
-          choco install nsis -y
+          $maxRetries = 3
+          $installed = $false
+          for ($i = 1; $i -le $maxRetries; $i++) {
+            Write-Host "Attempt $i of $maxRetries..."
+            choco install nsis -y 2>&1
+            if ($LASTEXITCODE -eq 0) { $installed = $true; break }
+            Write-Host "Chocolatey failed, retrying in 15s..."
+            Start-Sleep -Seconds 15
+          }
+          if (-not $installed) {
+            Write-Host "Chocolatey failed after $maxRetries attempts, installing NSIS directly..."
+            $url = "https://sourceforge.net/projects/nsis/files/NSIS%203/3.10/nsis-3.10-setup.exe/download"
+            $installer = "$env:TEMP\nsis-setup.exe"
+            Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
+            Start-Process -FilePath $installer -ArgumentList "/S" -Wait
+          }
           echo "C:\Program Files (x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Append
         shell: pwsh
 
