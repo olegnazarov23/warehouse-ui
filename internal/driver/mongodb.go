@@ -102,7 +102,15 @@ func (d *MongoDBDriver) Connect(ctx context.Context, cfg ConnectionConfig) error
 
 func (d *MongoDBDriver) Disconnect() error {
 	if d.client != nil {
-		return d.client.Disconnect(context.Background())
+		ch := make(chan error, 1)
+		go func() { ch <- d.client.Disconnect(context.Background()) }()
+		select {
+		case err := <-ch:
+			return err
+		case <-time.After(5 * time.Second):
+			d.client = nil
+			return nil
+		}
 	}
 	return nil
 }
@@ -111,7 +119,14 @@ func (d *MongoDBDriver) Ping(ctx context.Context) error {
 	if d.client == nil {
 		return fmt.Errorf("not connected")
 	}
-	return d.client.Ping(ctx, nil)
+	ch := make(chan error, 1)
+	go func() { ch <- d.client.Ping(ctx, nil) }()
+	select {
+	case err := <-ch:
+		return err
+	case <-time.After(10 * time.Second):
+		return fmt.Errorf("MongoDB ping timed out — check connection and credentials")
+	}
 }
 
 func (d *MongoDBDriver) ListDatabases(ctx context.Context) ([]string, error) {

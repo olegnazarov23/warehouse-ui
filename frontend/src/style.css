@@ -131,6 +131,17 @@ button:focus-visible {
   background: var(--color-surface) !important;
 }
 
+/* ── Query running progress bar ──────────────────────────── */
+
+@keyframes progress-bar {
+  0% { width: 0%; margin-left: 0%; }
+  50% { width: 40%; margin-left: 30%; }
+  100% { width: 0%; margin-left: 100%; }
+}
+.animate-progress-bar {
+  animation: progress-bar 1.5s ease-in-out infinite;
+}
+
 /* ── macOS-style selection ───────────────────────────────── */
 
 ::selection {

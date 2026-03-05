@@ -31,6 +31,8 @@ export function DryRun(arg1:string):Promise<driver.DryRunResult>;
 
 export function Execute(arg1:string,arg2:number):Promise<driver.QueryResult>;
 
+export function ExecuteAsync(arg1:string,arg2:number):Promise<void>;
+
 export function ExplainQuery(arg1:string):Promise<driver.ExplainResult>;
 
 export function ExportCSV(arg1:string):Promise<string>;

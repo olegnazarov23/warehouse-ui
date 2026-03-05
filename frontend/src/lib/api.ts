@@ -175,6 +175,12 @@ export async function execute(sql: string, limit: number): Promise<QueryResult> 
   return app.Execute(sql, limit);
 }
 
+/** Fire-and-forget query execution. Result comes via "query:result" / "query:error" events. */
+export async function executeAsync(sql: string, limit: number): Promise<void> {
+  const app = await getApp();
+  return app.ExecuteAsync(sql, limit);
+}
+
 export async function cancelQuery(): Promise<void> {
   const app = await getApp();
   return app.CancelQuery();

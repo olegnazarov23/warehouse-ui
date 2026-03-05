@@ -70,7 +70,16 @@ func (d *BigQueryDriver) Connect(ctx context.Context, cfg ConnectionConfig) erro
 
 func (d *BigQueryDriver) Disconnect() error {
 	if d.client != nil {
-		return d.client.Close()
+		ch := make(chan error, 1)
+		go func() { ch <- d.client.Close() }()
+		select {
+		case err := <-ch:
+			return err
+		case <-time.After(5 * time.Second):
+			// Force nil the client even if Close hangs
+			d.client = nil
+			return nil
+		}
 	}
 	return nil
 }
@@ -79,40 +88,64 @@ func (d *BigQueryDriver) Ping(ctx context.Context) error {
 	if d.client == nil {
 		return fmt.Errorf("not connected")
 	}
-	// List datasets as a connectivity check
-	it := d.client.Datasets(ctx)
-	_, err := it.Next()
-	if err == iterator.Done {
-		return nil // no datasets, but connection works
+	// Use a simple dry-run query to verify credentials and access
+	type pingResult struct{ err error }
+	ch := make(chan pingResult, 1)
+	go func() {
+		q := d.client.Query("SELECT 1")
+		q.DryRun = true
+		_, err := q.Run(ctx)
+		ch <- pingResult{err}
+	}()
+	select {
+	case r := <-ch:
+		return r.err
+	case <-time.After(10 * time.Second):
+		return fmt.Errorf("BigQuery ping timed out — check service account permissions")
 	}
-	return err
 }
 
 func (d *BigQueryDriver) ListDatabases(ctx context.Context) ([]string, error) {
 	if d.client == nil {
 		return nil, fmt.Errorf("not connected")
 	}
-	it := d.client.Datasets(ctx)
-	var datasets []string
-	for {
-		ds, err := it.Next()
-		if err == iterator.Done {
-			break
-		}
-		if err != nil {
-			return nil, fmt.Errorf("list datasets: %w", err)
-		}
-		datasets = append(datasets, ds.DatasetID)
+	type listResult struct {
+		datasets []string
+		err      error
 	}
-	return datasets, nil
+	ch := make(chan listResult, 1)
+	go func() {
+		it := d.client.Datasets(ctx)
+		var datasets []string
+		for {
+			ds, err := it.Next()
+			if err == iterator.Done {
+				break
+			}
+			if err != nil {
+				ch <- listResult{nil, fmt.Errorf("list datasets: %w", err)}
+				return
+			}
+			datasets = append(datasets, ds.DatasetID)
+		}
+		ch <- listResult{datasets, nil}
+	}()
+	select {
+	case r := <-ch:
+		return r.datasets, r.err
+	case <-time.After(30 * time.Second):
+		return nil, fmt.Errorf("listing datasets timed out — check service account permissions")
+	}
 }
 
 func (d *BigQueryDriver) ListTables(ctx context.Context, dataset string) ([]TableInfo, error) {
 	if d.client == nil {
 		return nil, fmt.Errorf("not connected")
 	}
+	listCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
 	ds := d.client.Dataset(dataset)
-	it := ds.Tables(ctx)
+	it := ds.Tables(listCtx)
 
 	var tables []TableInfo
 	for {
@@ -124,7 +157,7 @@ func (d *BigQueryDriver) ListTables(ctx context.Context, dataset string) ([]Tabl
 			return nil, fmt.Errorf("list tables: %w", err)
 		}
 		// Get full metadata for row count and size
-		meta, err := t.Metadata(ctx)
+		meta, err := t.Metadata(listCtx)
 		info := TableInfo{Name: t.TableID}
 		if err == nil {
 			info.RowCount = int64(meta.NumRows)
@@ -153,8 +186,10 @@ func (d *BigQueryDriver) GetTableSchema(ctx context.Context, dataset, table stri
 	if d.client == nil {
 		return nil, fmt.Errorf("not connected")
 	}
+	schemaCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 	ref := d.client.Dataset(dataset).Table(table)
-	meta, err := ref.Metadata(ctx)
+	meta, err := ref.Metadata(schemaCtx)
 	if err != nil {
 		return nil, fmt.Errorf("get table schema: %w", err)
 	}
@@ -198,9 +233,9 @@ func (d *BigQueryDriver) Execute(ctx context.Context, query string, limit int) (
 		return nil, fmt.Errorf("not connected")
 	}
 
-	queryCtx, cancel := context.WithCancel(ctx)
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	d.cancel = cancel
-	defer func() { d.cancel = nil }()
+	defer func() { d.cancel = nil; cancel() }()
 
 	q := d.client.Query(query)
 	// Safety cap: 50 GB
@@ -287,10 +322,13 @@ func (d *BigQueryDriver) DryRun(ctx context.Context, query string) (*DryRunResul
 		return &DryRunResult{Valid: false, Error: "not connected"}, nil
 	}
 
+	dryCtx, dryCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer dryCancel()
+
 	q := d.client.Query(query)
 	q.DryRun = true
 
-	job, err := q.Run(ctx)
+	job, err := q.Run(dryCtx)
 	if err != nil {
 		return &DryRunResult{Valid: false, Error: err.Error()}, nil
 	}

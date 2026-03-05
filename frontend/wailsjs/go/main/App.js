@@ -54,6 +54,10 @@ export function Execute(arg1, arg2) {
   return window['go']['main']['App']['Execute'](arg1, arg2);
 }
 
+export function ExecuteAsync(arg1, arg2) {
+  return window['go']['main']['App']['ExecuteAsync'](arg1, arg2);
+}
+
 export function ExplainQuery(arg1) {
   return window['go']['main']['App']['ExplainQuery'](arg1);
 }

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { onMount, onDestroy, tick } from "svelte";
+  import { EventsOn, EventsOff } from "../../../wailsjs/runtime/runtime";
   import {
     activeTab,
     setTabResult,
@@ -9,8 +11,62 @@
     updateTabSQL,
   } from "../../lib/stores/editor";
   import { currentDriverType } from "../../lib/stores/connection";
+
+  // Running timer
+  let runStartTime = 0;
+  let runElapsed = "";
+  let timerInterval: ReturnType<typeof setInterval> | null = null;
+
+  function startTimer() {
+    runStartTime = Date.now();
+    runElapsed = "0.0s";
+    timerInterval = setInterval(() => {
+      const elapsed = (Date.now() - runStartTime) / 1000;
+      runElapsed = elapsed < 60
+        ? `${elapsed.toFixed(1)}s`
+        : `${Math.floor(elapsed / 60)}m ${Math.floor(elapsed % 60)}s`;
+    }, 100);
+  }
+
+  function stopTimer() {
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
+    runElapsed = "";
+  }
+
+  // Track which tab is running so event handlers can update the right tab
+  let runningTabId = "";
+
+  onMount(() => {
+    EventsOn("query:result", (data: any) => {
+      if (runningTabId) {
+        setTabResult(runningTabId, data);
+        runningTabId = "";
+      }
+      localRunning = false;
+      stopTimer();
+    });
+    EventsOn("query:error", (data: any) => {
+      if (runningTabId) {
+        setTabError(runningTabId, data?.error || "Query failed");
+        setTabRunning(runningTabId, false);
+        runningTabId = "";
+      }
+      localRunning = false;
+      stopTimer();
+    });
+  });
+
+  onDestroy(() => {
+    if (timerInterval) clearInterval(timerInterval);
+    EventsOff("query:result");
+    EventsOff("query:error");
+  });
   import {
     execute,
+    executeAsync,
     dryRun,
     cancelQuery,
     exportCSV,
@@ -18,24 +74,23 @@
     exportExcel,
     optimizeQuery,
     explainQuery,
+    saveQuery,
   } from "../../lib/api";
   import { formatBytes, formatCost } from "../../lib/format";
   import type { OptimizeResult } from "../../lib/types";
 
-  async function handleRun() {
+  function handleRun() {
     const tab = $activeTab;
     if (!tab || !tab.sql.trim()) return;
 
+    localRunning = true;
+    runningTabId = tab.id;
     setTabRunning(tab.id, true);
     setTabError(tab.id, "");
+    startTimer();
 
-    try {
-      const result = await execute(tab.sql, 10000);
-      setTabResult(tab.id, result);
-    } catch (e: any) {
-      const msg = typeof e === "string" ? e : e?.message || "Query failed";
-      setTabError(tab.id, msg);
-    }
+    // Fire-and-forget: result comes back via "query:result" / "query:error" events
+    executeAsync(tab.sql, 10000);
   }
 
   let dryRunning = false;
@@ -63,6 +118,8 @@
       await cancelQuery();
       const tab = $activeTab;
       if (tab) setTabRunning(tab.id, false);
+      localRunning = false;
+      stopTimer();
     } catch (e) {
       console.error("Cancel failed:", e);
     }
@@ -161,6 +218,44 @@
     });
   }
 
+  let showSaveDialog = false;
+  let saveName = "";
+  let saving = false;
+
+  function openSaveDialog() {
+    const tab = $activeTab;
+    if (!tab?.sql?.trim()) return;
+    saveName = tab.name?.startsWith("Query") ? "" : tab.name || "";
+    showSaveDialog = true;
+    // Focus input after render
+    setTimeout(() => {
+      const el = document.getElementById("save-query-name");
+      if (el) el.focus();
+    }, 50);
+  }
+
+  async function handleSave() {
+    const tab = $activeTab;
+    if (!tab?.sql?.trim() || !saveName.trim()) return;
+    saving = true;
+    try {
+      await saveQuery(saveName.trim(), tab.sql, "", "[]");
+      showSaveDialog = false;
+      saveName = "";
+    } catch (e: any) {
+      console.error("Save failed:", e);
+    }
+    saving = false;
+  }
+
+  function handleSaveKeydown(e: KeyboardEvent) {
+    if (e.key === "Enter") handleSave();
+    if (e.key === "Escape") showSaveDialog = false;
+  }
+
+  // Local running flag — updates instantly without waiting for derived store
+  let localRunning = false;
+
   $: supportsCost =
     $currentDriverType === "bigquery" || $currentDriverType === "clickhouse";
 </script>
@@ -170,13 +265,17 @@
     class="flex items-center gap-2 px-4 py-2 border-b border-border bg-surface flex-shrink-0"
   >
     <!-- Run -->
-    {#if $activeTab?.running}
+    {#if localRunning}
       <button
-        class="px-4 py-2 text-sm font-semibold bg-danger text-white rounded-lg hover:bg-danger/80"
+        class="px-4 py-2 text-sm font-semibold bg-danger text-white rounded-lg hover:bg-danger/80 flex items-center gap-2"
         on:click={handleCancel}
       >
+        <div class="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
         Cancel
       </button>
+      {#if runElapsed}
+        <span class="text-sm text-text-dim font-mono tabular-nums">{runElapsed}</span>
+      {/if}
     {:else}
       <button
         class="px-4 py-2 text-sm font-semibold bg-accent text-white rounded-lg hover:bg-accent-hover shadow-sm shadow-accent/10"
@@ -247,6 +346,16 @@
         Format
       </button>
     {/if}
+
+    <!-- Save -->
+    <button
+      class="px-3 py-2 text-sm text-text-dim rounded-lg hover:bg-surface-hover hover:text-text font-medium disabled:opacity-50"
+      on:click={openSaveDialog}
+      disabled={!$activeTab?.sql?.trim()}
+      title="Save this query"
+    >
+      Save
+    </button>
 
     <div class="flex-1"></div>
 
@@ -330,6 +439,13 @@
     </div>
   </div>
 
+  <!-- Running progress bar -->
+  {#if localRunning}
+    <div class="h-0.5 bg-bg overflow-hidden">
+      <div class="h-full bg-accent animate-progress-bar"></div>
+    </div>
+  {/if}
+
   <!-- Optimize result banner -->
   {#if optimizeResult}
     <div class="px-4 py-2 border-b border-border bg-surface flex items-center gap-3 text-sm">
@@ -356,6 +472,33 @@
         on:click={dismissOptimizeResult}
       >
         Dismiss
+      </button>
+    </div>
+  {/if}
+
+  <!-- Save query dialog -->
+  {#if showSaveDialog}
+    <div class="px-4 py-2 border-b border-border bg-surface flex items-center gap-2">
+      <input
+        id="save-query-name"
+        type="text"
+        class="flex-1 px-3 py-1.5 text-sm rounded-lg bg-bg border border-border outline-none focus:border-accent"
+        placeholder="Query name..."
+        bind:value={saveName}
+        on:keydown={handleSaveKeydown}
+      />
+      <button
+        class="px-3 py-1.5 text-sm font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50"
+        on:click={handleSave}
+        disabled={saving || !saveName.trim()}
+      >
+        {saving ? "Saving..." : "Save"}
+      </button>
+      <button
+        class="px-2 py-1.5 text-sm text-text-muted hover:text-text"
+        on:click={() => (showSaveDialog = false)}
+      >
+        Cancel
       </button>
     </div>
   {/if}

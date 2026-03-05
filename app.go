@@ -178,6 +178,17 @@ func (a *App) Connect(cfg driver.ConnectionConfig) (ConnectionStatus, error) {
 		return ConnectionStatus{}, err
 	}
 
+	// Verify connectivity (catches revoked credentials, network issues, etc.)
+	if err := d.Ping(a.ctx); err != nil {
+		logger.Error("ping failed after connect: %v", err)
+		d.Disconnect()
+		if a.sshTunnel != nil {
+			a.sshTunnel.Close()
+			a.sshTunnel = nil
+		}
+		return ConnectionStatus{}, fmt.Errorf("connected but server unreachable: %w", err)
+	}
+
 	logger.Info("connected successfully: %s", cfg.Type)
 	a.driver = d
 	a.connID = cfg.ID
@@ -1384,6 +1395,22 @@ func (a *App) Execute(sql string, limit int) (*driver.QueryResult, error) {
 	return result, err
 }
 
+// ExecuteAsync starts a query in the background and emits the result via events.
+// This prevents the Wails JS binding from blocking the browser's event loop.
+// Events emitted: "query:result" (on success) or "query:error" (on failure).
+func (a *App) ExecuteAsync(sql string, limit int) {
+	go func() {
+		result, err := a.Execute(sql, limit)
+		if err != nil {
+			wailsRuntime.EventsEmit(a.ctx, "query:error", map[string]string{
+				"error": err.Error(),
+			})
+		} else {
+			wailsRuntime.EventsEmit(a.ctx, "query:result", result)
+		}
+	}()
+}
+
 // ClearQueryCache removes all cached query results.
 func (a *App) ClearQueryCache() {
 	a.cacheMu.Lock()
@@ -1665,9 +1692,12 @@ func (a *App) AiChat(message, conversationID, editorContext string) error {
 		})
 	}
 
-	// Save assistant response
+	// Save assistant response (strip tool-activity tags — they're only for live streaming UI)
 	if a.store != nil && fullResponse.Len() > 0 {
-		a.store.AddChatMessage(uuid.NewString(), conversationID, "assistant", fullResponse.String())
+		cleaned := stripToolActivity(fullResponse.String())
+		if cleaned != "" {
+			a.store.AddChatMessage(uuid.NewString(), conversationID, "assistant", cleaned)
+		}
 	}
 
 	// Auto-generate title for new conversations (after first exchange)
@@ -1713,6 +1743,13 @@ func isRateLimited(err error) bool {
 		strings.Contains(msg, "rate limit") ||
 		strings.Contains(msg, "429") ||
 		strings.Contains(msg, "too many requests")
+}
+
+// stripToolActivity removes <tool-activity>...</tool-activity> tags from AI responses.
+var toolActivityRe = regexp.MustCompile(`<tool-activity>.*?</tool-activity>`)
+
+func stripToolActivity(s string) string {
+	return strings.TrimSpace(toolActivityRe.ReplaceAllString(s, ""))
 }
 
 // generateConversationTitle uses AI to create a short title from the first message.
@@ -2574,6 +2611,12 @@ func (a *App) buildSchemaContext() *ai.SchemaContext {
 			if err != nil {
 				return nil, nil, 0, 0, err
 			}
+			// Emit event so the frontend can show the query + results in the editor
+			wailsRuntime.EventsEmit(a.ctx, "ai:action", map[string]any{
+				"type":   "run_query",
+				"query":  query,
+				"result": result,
+			})
 			// Convert rows to string slices
 			rows := make([][]string, len(result.Rows))
 			for i, row := range result.Rows {
@@ -2594,6 +2637,12 @@ func (a *App) buildSchemaContext() *ai.SchemaContext {
 			if err != nil {
 				return "", err
 			}
+			// Emit event so the frontend can show the dry-run in the editor
+			wailsRuntime.EventsEmit(a.ctx, "ai:action", map[string]any{
+				"type":    "dry_run",
+				"query":   query,
+				"dry_run": dr,
+			})
 			var sb strings.Builder
 			if dr.Valid {
 				sb.WriteString("Query is valid.\n")

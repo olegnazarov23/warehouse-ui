@@ -22,7 +22,7 @@
     getAiSettings,
     setAiSettings,
   } from "../../lib/api";
-  import { addTab, activeTab } from "../../lib/stores/editor";
+  import { addTab, activeTab, setTabResult, setTabDryRun } from "../../lib/stores/editor";
   import { formatBytes, formatCost, formatDuration, formatNumber } from "../../lib/format";
   import type { ChatMessage, ProviderInfo } from "../../lib/types";
 
@@ -53,6 +53,20 @@
     EventsOn("ai:title-update", (data: any) => {
       if (data?.conversation_id && data?.title) {
         updateConversationTitle(data.conversation_id, data.title);
+      }
+    });
+
+    EventsOn("ai:action", (data: any) => {
+      if (data?.type === "run_query" && data?.query) {
+        const tabId = addTab("AI Query", data.query);
+        if (data.result) {
+          setTabResult(tabId, data.result);
+        }
+      } else if (data?.type === "dry_run" && data?.query) {
+        const tabId = addTab("AI Query", data.query);
+        if (data.dry_run) {
+          setTabDryRun(tabId, data.dry_run);
+        }
       }
     });
 
@@ -87,6 +101,7 @@
   onDestroy(() => {
     EventsOff("ai:chunk");
     EventsOff("ai:title-update");
+    EventsOff("ai:action");
   });
 
   const categoryStyle: Record<string, string> = {
@@ -266,6 +281,8 @@
   }
 
   function formatContent(content: string): { type: "text" | "sql"; value: string }[] {
+    // Strip any leaked tool-activity tags (from older saved messages)
+    content = content.replace(/<tool-activity>.*?<\/tool-activity>/g, "").trim();
     const parts: { type: "text" | "sql"; value: string }[] = [];
     const regex = /```sql\s*([\s\S]*?)```/g;
     let lastIndex = 0;
