@@ -61,6 +61,15 @@
       // Not connected or Wails not ready yet
     }
     ready = true;
+
+    // Save tabs before page reload (dev hot-reload, browser refresh)
+    const handleBeforeUnload = () => {
+      if (lastConnectionId) {
+        saveTabs(lastConnectionId);
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   });
 </script>
 

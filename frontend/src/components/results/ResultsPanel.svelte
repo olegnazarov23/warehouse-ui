@@ -15,11 +15,20 @@
 
   $: sqlHints = tab?.sql && $currentDriverType !== "mongodb" ? analyzeSql(tab.sql, $currentDriverType) : [];
 
-  // Detect if this tab is a preview (editable)
+  // Detect source table for inline editing
   $: isPreview = tab?.title?.startsWith("Preview: ") ?? false;
-  $: previewTable = isPreview ? tab!.title!.replace("Preview: ", "") : "";
-  // Use first column as PK heuristic for preview tables
-  $: previewPKs = isPreview && tab?.result?.columns?.length ? [tab.result.columns[0]] : [];
+  $: sourceTable = isPreview
+    ? tab!.title!.replace("Preview: ", "")
+    : extractTableFromSQL(tab?.sql ?? "");
+  $: canEdit = !!sourceTable && (tab?.result?.columns?.length ?? 0) > 0;
+  // Use first column as PK heuristic
+  $: editPKs = canEdit && tab?.result?.columns?.length ? [tab.result.columns[0]] : [];
+
+  function extractTableFromSQL(sql: string): string {
+    // Match simple SELECT ... FROM <table> patterns
+    const m = sql.match(/\bFROM\s+[`"']?(\w+(?:\.\w+)?)[`"']?\b/i);
+    return m ? m[1] : "";
+  }
 
   function handleCellEdit(e: CustomEvent<{ sql: string }>) {
     addTab("UPDATE", e.detail.sql);
@@ -128,9 +137,9 @@
           columns={tab.result.columns}
           columnTypes={tab.result.column_types}
           rows={tab.result.rows}
-          editable={isPreview}
-          sourceTable={previewTable}
-          primaryKeys={previewPKs}
+          editable={canEdit}
+          sourceTable={sourceTable}
+          primaryKeys={editPKs}
           on:edit={handleCellEdit}
         />
       {:else}
