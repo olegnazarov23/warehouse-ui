@@ -106,10 +106,11 @@ func (s *Store) migrate() error {
 			created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE IF NOT EXISTS ai_conversations (
-			id         TEXT PRIMARY KEY,
-			title      TEXT NOT NULL DEFAULT 'New Chat',
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+			id            TEXT PRIMARY KEY,
+			connection_id TEXT NOT NULL DEFAULT '',
+			title         TEXT NOT NULL DEFAULT 'New Chat',
+			created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE IF NOT EXISTS ai_messages (
 			id              TEXT PRIMARY KEY,
@@ -126,6 +127,10 @@ func (s *Store) migrate() error {
 			return fmt.Errorf("migration: %w\nSQL: %s", err, m)
 		}
 	}
+
+	// Add connection_id column to existing ai_conversations tables (safe to re-run; ignores error if column already exists)
+	s.db.Exec("ALTER TABLE ai_conversations ADD COLUMN connection_id TEXT NOT NULL DEFAULT ''")
+	s.db.Exec("CREATE INDEX IF NOT EXISTS idx_ai_conversations_conn ON ai_conversations(connection_id, updated_at)")
 
 	// Seed built-in query templates for beginners
 	s.seedTemplates()
@@ -599,10 +604,11 @@ func (s *Store) ListTemplates(driverType string) ([]QueryTemplate, error) {
 
 // Conversation represents an AI chat conversation.
 type Conversation struct {
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	ID           string `json:"id"`
+	ConnectionID string `json:"connection_id"`
+	Title        string `json:"title"`
+	CreatedAt    string `json:"created_at"`
+	UpdatedAt    string `json:"updated_at"`
 }
 
 // ChatMessage represents a single message in a conversation.
@@ -614,8 +620,10 @@ type ChatMessage struct {
 	CreatedAt      string `json:"created_at"`
 }
 
-func (s *Store) ListConversations() ([]Conversation, error) {
-	rows, err := s.db.Query("SELECT id, title, created_at, updated_at FROM ai_conversations ORDER BY updated_at DESC")
+func (s *Store) ListConversations(connectionID string) ([]Conversation, error) {
+	rows, err := s.db.Query(
+		"SELECT id, connection_id, title, created_at, updated_at FROM ai_conversations WHERE connection_id = ? ORDER BY updated_at DESC",
+		connectionID)
 	if err != nil {
 		return nil, err
 	}
@@ -624,7 +632,7 @@ func (s *Store) ListConversations() ([]Conversation, error) {
 	var convs []Conversation
 	for rows.Next() {
 		var c Conversation
-		if err := rows.Scan(&c.ID, &c.Title, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.ConnectionID, &c.Title, &c.CreatedAt, &c.UpdatedAt); err != nil {
 			return nil, err
 		}
 		convs = append(convs, c)
@@ -632,8 +640,8 @@ func (s *Store) ListConversations() ([]Conversation, error) {
 	return convs, rows.Err()
 }
 
-func (s *Store) CreateConversation(id, title string) error {
-	_, err := s.db.Exec("INSERT INTO ai_conversations (id, title) VALUES (?, ?)", id, title)
+func (s *Store) CreateConversation(id, connectionID, title string) error {
+	_, err := s.db.Exec("INSERT INTO ai_conversations (id, connection_id, title) VALUES (?, ?, ?)", id, connectionID, title)
 	return err
 }
 

@@ -3,28 +3,43 @@
   import Shell from "./components/layout/Shell.svelte";
   import ConnectionPage from "./components/connect/ConnectionPage.svelte";
   import { connectionStatus, isConnected } from "./lib/stores/connection";
-  import { clearChat, ai } from "./lib/stores/ai";
-  import { getConnectionStatus } from "./lib/api";
+  import { clearChat, ai, setConversations, setActiveConversation } from "./lib/stores/ai";
+  import { getConnectionStatus, listAiConversations, getAiMessages } from "./lib/api";
+  import type { ChatMessage } from "./lib/types";
 
   let ready = false;
   let lastConnectionId = "";
 
-  // Clear AI chat when switching to a different connection
+  // Reload AI conversations when switching connections
   connectionStatus.subscribe((status) => {
     if (status.connected && status.id && status.id !== lastConnectionId) {
-      if (lastConnectionId !== "") {
-        clearChat();
-        ai.update((s) => ({
-          ...s,
-          conversations: [],
-          activeConversationId: "",
-        }));
-      }
       lastConnectionId = status.id;
+      // Reload conversations for the new connection
+      loadConversationsForConnection();
     } else if (!status.connected) {
       lastConnectionId = "";
     }
   });
+
+  async function loadConversationsForConnection() {
+    clearChat();
+    ai.update((s) => ({ ...s, conversations: [], activeConversationId: "" }));
+    try {
+      const convs = await listAiConversations();
+      if (convs && convs.length > 0) {
+        setConversations(convs);
+        const stored = await getAiMessages(convs[0].id);
+        const messages: ChatMessage[] = (stored ?? []).map((m) => ({
+          role: m.role as "user" | "assistant",
+          content: m.content,
+          timestamp: new Date(m.created_at).getTime(),
+        }));
+        setActiveConversation(convs[0].id, messages);
+      }
+    } catch {
+      // No conversations for this connection
+    }
+  }
 
   onMount(async () => {
     try {

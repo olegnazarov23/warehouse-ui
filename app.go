@@ -1571,7 +1571,7 @@ func (a *App) AiChat(message, conversationID, editorContext string) error {
 
 	// Ensure conversation exists in store
 	if a.store != nil {
-		convs, _ := a.store.ListConversations()
+		convs, _ := a.store.ListConversations(a.connID)
 		found := false
 		for _, c := range convs {
 			if c.ID == conversationID {
@@ -1580,7 +1580,7 @@ func (a *App) AiChat(message, conversationID, editorContext string) error {
 			}
 		}
 		if !found {
-			a.store.CreateConversation(conversationID, "New Chat")
+			a.store.CreateConversation(conversationID, a.connID, "New Chat")
 		}
 	}
 
@@ -1672,7 +1672,7 @@ func (a *App) AiChat(message, conversationID, editorContext string) error {
 
 	// Auto-generate title for new conversations (after first exchange)
 	if a.store != nil {
-		convs, _ := a.store.ListConversations()
+		convs, _ := a.store.ListConversations(a.connID)
 		for _, c := range convs {
 			if c.ID == conversationID && c.Title == "New Chat" {
 				go a.generateConversationTitle(conversationID, message)
@@ -1753,12 +1753,12 @@ Return ONLY the title text, nothing else.`, firstMessage)
 	})
 }
 
-// ListAiConversations returns all saved AI conversations.
+// ListAiConversations returns AI conversations for the current connection.
 func (a *App) ListAiConversations() ([]store.Conversation, error) {
 	if a.store == nil {
 		return nil, fmt.Errorf("store not initialized")
 	}
-	return a.store.ListConversations()
+	return a.store.ListConversations(a.connID)
 }
 
 // GetAiMessages returns messages for a conversation.

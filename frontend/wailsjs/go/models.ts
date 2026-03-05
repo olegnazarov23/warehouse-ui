@@ -507,6 +507,7 @@ export namespace store {
 	}
 	export class Conversation {
 	    id: string;
+	    connection_id: string;
 	    title: string;
 	    created_at: string;
 	    updated_at: string;
@@ -518,6 +519,7 @@ export namespace store {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
+	        this.connection_id = source["connection_id"];
 	        this.title = source["title"];
 	        this.created_at = source["created_at"];
 	        this.updated_at = source["updated_at"];
