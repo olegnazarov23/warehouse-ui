@@ -178,6 +178,11 @@ jobs:
       - name: Install ClawHub CLI
         run: npm install -g clawhub
 
+      - name: Authenticate with ClawHub
+        run: clawhub login --token "$CLAWHUB_TOKEN"
+        env:
+          CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
+
       - name: Extract version from tag
         id: version
         run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
@@ -187,8 +192,6 @@ jobs:
           sed -i "s/^version:.*/version: ${{ steps.version.outputs.version }}/" openclaw/SKILL.md
 
       - name: Publish skill to ClawHub
-        env:
-          CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
         run: |
           clawhub publish ./openclaw \
             --slug warehouse-ui \
