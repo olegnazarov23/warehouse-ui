@@ -171,7 +171,7 @@ jobs:
           fi
 
       - name: Build Linux binary
-        run: wails build -platform linux/amd64 -ldflags "-X main.Version=${{ steps.version.outputs.version }}"
+        run: wails build -platform linux/amd64 -tags webkit2_41 -ldflags "-X main.Version=${{ steps.version.outputs.version }}"
 
       - name: Create tarball
         run: |
