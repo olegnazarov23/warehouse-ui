@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -313,6 +314,7 @@ type DetectedConnection struct {
 type CodeContext struct {
 	Paths               []string              `json:"paths"`
 	Snippets            []CodeSnippet         `json:"snippets"`
+	FullFiles           []CodeSnippet         `json:"full_files"`  // full file contents, prioritized
 	DetectedConnections []DetectedConnection  `json:"detected_connections"`
 	Summary             string                `json:"summary"` // brief stats
 }
@@ -356,7 +358,7 @@ func (a *App) ScanCodeContext(paths []string) (*CodeContext, error) {
 		{"MONGO_URI", "mongodb"}, {"MONGODB_URI", "mongodb"},
 	}
 
-	// Patterns that indicate SQL-related code
+	// Patterns that indicate database-related code (SQL + MongoDB)
 	sqlPatterns := []string{
 		"SELECT ", "INSERT ", "UPDATE ", "DELETE ", "CREATE TABLE",
 		"ALTER TABLE", "JOIN ", "FROM ", "WHERE ",
@@ -364,6 +366,12 @@ func (a *App) ScanCodeContext(paths []string) (*CodeContext, error) {
 		"sequelize", "prisma", "typeorm", "knex",
 		"SQLAlchemy", "django.db", "ActiveRecord",
 		"migration", "Migration",
+		// MongoDB patterns
+		".find(", ".findOne(", ".aggregate(", ".insertOne(", ".insertMany(",
+		".updateOne(", ".updateMany(", ".deleteOne(", ".deleteMany(",
+		".countDocuments(", ".distinct(", ".createIndex(",
+		"MongoClient", "pymongo", "mongoose", "mongosh",
+		"collection(", "getCollection(", "db.collection",
 	}
 
 	const maxSnippets = 50
@@ -559,6 +567,199 @@ func (a *App) ScanCodeContext(paths []string) (*CodeContext, error) {
 		result.Summary = fmt.Sprintf("Scanned %d repos, found %d SQL-related code snippets", len(paths), len(result.Snippets))
 	}
 	return result, nil
+}
+
+// ScanCodeFull walks linked repos and loads full file contents into AI context.
+// Files are prioritized: models/schemas first, then services/logic, then everything else.
+// Total content is capped at ~300KB to fit within LLM context windows.
+func (a *App) ScanCodeFull(paths []string) *CodeContext {
+	result := &CodeContext{Paths: paths}
+
+	// Extensions to include
+	codeExts := map[string]string{
+		".go": "go", ".py": "python", ".ts": "typescript", ".tsx": "typescript",
+		".js": "javascript", ".jsx": "javascript", ".rb": "ruby", ".java": "java",
+		".cs": "csharp", ".rs": "rust", ".php": "php", ".sql": "sql",
+		".graphql": "graphql", ".prisma": "prisma", ".proto": "protobuf",
+	}
+	configExts := map[string]bool{
+		".yaml": true, ".yml": true, ".json": true, ".toml": true,
+	}
+
+	// Dirs to skip
+	skipDirs := map[string]bool{
+		".git": true, "node_modules": true, "vendor": true, "__pycache__": true,
+		"dist": true, "build": true, "target": true, ".next": true,
+		"venv": true, ".venv": true, ".tox": true, "coverage": true,
+		".idea": true, ".vscode": true,
+	}
+
+	// Files to skip
+	skipFiles := map[string]bool{
+		"package-lock.json": true, "yarn.lock": true, "go.sum": true,
+		"poetry.lock": true, "Cargo.lock": true, "pnpm-lock.yaml": true,
+		"composer.lock": true, "Gemfile.lock": true,
+	}
+
+	type fileEntry struct {
+		relPath  string
+		language string
+		size     int64
+		priority int // 1=highest
+	}
+
+	var files []fileEntry
+
+	for _, root := range paths {
+		filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return nil
+			}
+			if info.IsDir() {
+				if skipDirs[info.Name()] || strings.HasPrefix(info.Name(), ".") {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+
+			name := info.Name()
+			if skipFiles[name] || info.Size() > 50*1024 {
+				return nil
+			}
+
+			ext := strings.ToLower(filepath.Ext(name))
+			relPath, _ := filepath.Rel(root, path)
+			lowerPath := strings.ToLower(relPath)
+
+			var lang string
+			if l, ok := codeExts[ext]; ok {
+				lang = l
+			} else if configExts[ext] && info.Size() < 10*1024 {
+				lang = "yaml"
+				if ext == ".json" {
+					lang = "json"
+				} else if ext == ".toml" {
+					lang = "toml"
+				}
+			} else if strings.HasPrefix(name, ".env") && info.Size() < 10*1024 {
+				lang = "env"
+			} else if name == "docker-compose.yml" || name == "docker-compose.yaml" || name == "compose.yml" || name == "compose.yaml" {
+				lang = "yaml"
+			} else {
+				return nil
+			}
+
+			// Determine priority based on path/name
+			priority := 4
+			if containsAny(lowerPath, "model", "schema", "entity", "type", "migration", "orm") {
+				priority = 1
+			} else if containsAny(lowerPath, "service", "controller", "handler", "repository", "dao", "manager", "resource") {
+				priority = 2
+			} else if containsAny(lowerPath, "helper", "util", "common", "lib", "shared", "config") {
+				priority = 3
+			}
+			// Boost config/env files
+			if lang == "env" || name == "docker-compose.yml" || name == "docker-compose.yaml" {
+				priority = 1
+			}
+
+			files = append(files, fileEntry{
+				relPath:  relPath,
+				language: lang,
+				size:     info.Size(),
+				priority: priority,
+			})
+			return nil
+		})
+	}
+
+	// Sort by priority, then by path
+	sort.Slice(files, func(i, j int) bool {
+		if files[i].priority != files[j].priority {
+			return files[i].priority < files[j].priority
+		}
+		return files[i].relPath < files[j].relPath
+	})
+
+	// Load files up to budget
+	const maxBytes = 300 * 1024 // 300KB
+	var totalBytes int64
+
+	for _, f := range files {
+		if totalBytes+f.size > int64(maxBytes) {
+			continue // skip this file, try smaller ones
+		}
+
+		// Find the root this file belongs to
+		var fullPath string
+		for _, root := range paths {
+			candidate := filepath.Join(root, f.relPath)
+			if _, err := os.Stat(candidate); err == nil {
+				fullPath = candidate
+				break
+			}
+		}
+		if fullPath == "" {
+			continue
+		}
+
+		data, err := os.ReadFile(fullPath)
+		if err != nil {
+			continue
+		}
+
+		content := string(data)
+
+		// Mask passwords in env files
+		if f.language == "env" {
+			lines := strings.Split(content, "\n")
+			for i, line := range lines {
+				if strings.Contains(line, "=") && containsAnyCI(line, "password", "secret", "key", "token") {
+					parts := strings.SplitN(line, "=", 2)
+					if len(parts) == 2 {
+						val := strings.TrimSpace(parts[1])
+						if len(val) > 8 {
+							lines[i] = parts[0] + "=" + val[:4] + "****"
+						}
+					}
+				}
+			}
+			content = strings.Join(lines, "\n")
+		}
+
+		result.FullFiles = append(result.FullFiles, CodeSnippet{
+			FilePath: f.relPath,
+			Language: f.language,
+			Content:  content,
+			LineNum:  1,
+		})
+		totalBytes += int64(len(content))
+	}
+
+	result.Summary = fmt.Sprintf("Loaded %d files (%dKB) from %d repos", len(result.FullFiles), totalBytes/1024, len(paths))
+	logger.Info("code context: %s", result.Summary)
+	return result
+}
+
+// containsAny checks if s contains any of the substrings.
+func containsAny(s string, subs ...string) bool {
+	for _, sub := range subs {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
+}
+
+// containsAnyCI checks if s contains any of the substrings (case-insensitive).
+func containsAnyCI(s string, subs ...string) bool {
+	lower := strings.ToLower(s)
+	for _, sub := range subs {
+		if strings.Contains(lower, sub) {
+			return true
+		}
+	}
+	return false
 }
 
 // ParseConnectionString parses a database connection URI or env var into a ConnectionConfig.
@@ -2386,16 +2587,20 @@ func (a *App) buildSchemaContext() *ai.SchemaContext {
 
 	// Include code context from linked repos
 	if len(a.codePaths) > 0 {
+		// Full file loading for deep codebase understanding
+		fullCtx := a.ScanCodeFull(a.codePaths)
+		for _, f := range fullCtx.FullFiles {
+			sc.FullFiles = append(sc.FullFiles, ai.CodeSnippetRef{
+				FilePath: f.FilePath,
+				Language: f.Language,
+				Content:  f.Content,
+				LineNum:  f.LineNum,
+			})
+		}
+
+		// Also scan for detected connections (env files, docker-compose)
 		codeCtx, err := a.ScanCodeContext(a.codePaths)
 		if err == nil {
-			for _, s := range codeCtx.Snippets {
-				sc.CodeSnippets = append(sc.CodeSnippets, ai.CodeSnippetRef{
-					FilePath: s.FilePath,
-					Language: s.Language,
-					Content:  s.Content,
-					LineNum:  s.LineNum,
-				})
-			}
 			for _, dc := range codeCtx.DetectedConnections {
 				sc.DetectedConnections = append(sc.DetectedConnections, ai.DetectedConnectionRef{
 					Source:     dc.Source,

@@ -18,6 +18,7 @@ type SchemaContext struct {
 	DriverType           string                    `json:"driver_type"`
 	Database             string                    `json:"database"`
 	Tables               map[string][]SchemaColumn `json:"tables"`                  // table_name -> columns
+	FullFiles            []CodeSnippetRef          `json:"full_files"`              // full file contents from linked repos
 	CodeSnippets         []CodeSnippetRef          `json:"code_snippets"`           // relevant code from user repos
 	DetectedConnections  []DetectedConnectionRef   `json:"detected_connections"`    // DB connections found in code
 }
@@ -115,6 +116,7 @@ Mindset:
 - Make smart defaults: use reasonable date ranges, sensible GROUP BYs, and appropriate aggregations based on what the data looks like.
 - If a request is vague ("show me something interesting"), pick the most useful analysis based on the schema and go.
 - Only ask the user something if the query would be destructive (DELETE/DROP) or if the schema genuinely has no table matching what they asked about.
+- You have access to the user's codebase files below. Use them to understand business concepts, entity relationships, data flows, and how the database is actually used. When a user asks about a domain concept (e.g. "offers", "campaigns"), find it in the code first, understand the data model, then write the query.
 
 Rules:
 - ONLY use tables and columns from the schema below. Never invent tables, columns, or functions.
@@ -156,10 +158,18 @@ MongoDB-specific rules:
 		sb.WriteString("```\n")
 	}
 
-	// Include code context from user repos if available
-	if schema != nil && len(schema.CodeSnippets) > 0 {
+	// Include full codebase files if available (preferred over snippets)
+	if schema != nil && len(schema.FullFiles) > 0 {
+		sb.WriteString("\n## Codebase\n")
+		sb.WriteString("The user has linked their code repository. Below are the source files. Use these to understand data models, entity relationships, business logic, services, and how data flows through the application.\n\n")
+
+		for _, f := range schema.FullFiles {
+			sb.WriteString(fmt.Sprintf("**%s**:\n```%s\n%s\n```\n\n", f.FilePath, f.Language, f.Content))
+		}
+	} else if schema != nil && len(schema.CodeSnippets) > 0 {
+		// Fallback to snippets if full files not available
 		sb.WriteString("\n## Codebase Context\n")
-		sb.WriteString("The user has linked code repositories. Below are SQL-related code snippets showing how this database is used in their codebase. Use this to understand naming conventions, common query patterns, and existing logic:\n\n")
+		sb.WriteString("The user has linked code repositories. Below are code snippets showing how this database is used in their codebase:\n\n")
 
 		for _, s := range schema.CodeSnippets {
 			sb.WriteString(fmt.Sprintf("**%s** (line %d):\n```%s\n%s\n```\n\n", s.FilePath, s.LineNum, s.Language, s.Content))
