@@ -12,6 +12,12 @@ type Message struct {
 	Content string `json:"content"`
 }
 
+// QueryFunc executes a query and returns columns, rows (as string slices), row count, and duration.
+type QueryFunc func(ctx context.Context, query string, limit int) (columns []string, rows [][]string, rowCount int64, durationMs int64, err error)
+
+// DryRunFunc runs a dry-run/EXPLAIN and returns a summary string.
+type DryRunFunc func(ctx context.Context, query string) (summary string, err error)
+
 // SchemaContext is a compact representation of the connected database schema
 // that gets injected into the AI system prompt.
 type SchemaContext struct {
@@ -21,6 +27,9 @@ type SchemaContext struct {
 	FullFiles            []CodeSnippetRef          `json:"full_files"`              // full file contents from linked repos
 	CodeSnippets         []CodeSnippetRef          `json:"code_snippets"`           // relevant code from user repos
 	DetectedConnections  []DetectedConnectionRef   `json:"detected_connections"`    // DB connections found in code
+	CodePaths            []string                  `json:"-"`                       // linked repo paths for tool execution
+	RunQuery             QueryFunc                 `json:"-"`                       // execute a query against the DB
+	DryRun               DryRunFunc                `json:"-"`                       // dry-run/EXPLAIN a query
 }
 
 // CodeSnippetRef is a code fragment for AI context.
@@ -110,13 +119,19 @@ Style:
 - Wrap SQL in triple-backtick sql code blocks.
 - Keep responses short. No filler, no preamble.
 - No follow-up questions. No "let me know if..." or "would you like...". Just deliver the answer.
+- Use markdown formatting for readability: **bold** for key terms, bullet points for lists, and headers (##) to separate sections when the response has multiple parts.
+- Use a few emojis sparingly to make responses scannable: 🔍 for lookups/searches, 📊 for data insights, ⚠️ for warnings/caveats, ✅ for confirmations, 💡 for tips. Don't overdo it — one or two per response is enough.
 
 Mindset:
 - You can read the schema. Use it to infer what data means — column names, types, and table relationships tell you most of what you need.
 - Make smart defaults: use reasonable date ranges, sensible GROUP BYs, and appropriate aggregations based on what the data looks like.
 - If a request is vague ("show me something interesting"), pick the most useful analysis based on the schema and go.
 - Only ask the user something if the query would be destructive (DELETE/DROP) or if the schema genuinely has no table matching what they asked about.
-- You have access to the user's codebase files below. Use them to understand business concepts, entity relationships, data flows, and how the database is actually used. When a user asks about a domain concept (e.g. "offers", "campaigns"), find it in the code first, understand the data model, then write the query.
+- You have access to the user's codebase files below as a primer. Use them to understand business concepts, entity relationships, data flows, and how the database is actually used.
+- You also have tools to explore the codebase deeper: search_files (find files by name), grep_code (search file contents), and read_file (read full files). USE THESE TOOLS proactively when a user asks about domain concepts, entity relationships, or business logic. Don't guess — search the code first, read the relevant files, then write the query.
+- When a user asks about a domain concept (e.g. "offers", "campaigns"), use grep_code to find where it's defined, read_file to understand the model, then trace relationships through the code before writing the query.
+- You have data analyst tools: run_query (execute SQL and see results — use this to verify your queries, explore data, or do multi-step analysis), explain_query (dry-run/EXPLAIN to check cost and performance before running expensive queries).
+- Be a proactive data analyst: when you write a query, consider running it with run_query to verify it works. If the user asks to optimize, use explain_query first, then iterate. Suggest follow-up queries that would give deeper insights based on the results.
 
 Rules:
 - ONLY use tables and columns from the schema below. Never invent tables, columns, or functions.

@@ -297,6 +297,7 @@ export namespace main {
 	export class CodeContext {
 	    paths: string[];
 	    snippets: CodeSnippet[];
+	    full_files: CodeSnippet[];
 	    detected_connections: DetectedConnection[];
 	    summary: string;
 	
@@ -308,6 +309,7 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.paths = source["paths"];
 	        this.snippets = this.convertValues(source["snippets"], CodeSnippet);
+	        this.full_files = this.convertValues(source["full_files"], CodeSnippet);
 	        this.detected_connections = this.convertValues(source["detected_connections"], DetectedConnection);
 	        this.summary = source["summary"];
 	    }

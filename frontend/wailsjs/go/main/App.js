@@ -182,6 +182,10 @@ export function ScanCodeContext(arg1) {
   return window['go']['main']['App']['ScanCodeContext'](arg1);
 }
 
+export function ScanCodeFull(arg1) {
+  return window['go']['main']['App']['ScanCodeFull'](arg1);
+}
+
 export function SetAiSettings(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['SetAiSettings'](arg1, arg2, arg3, arg4);
 }

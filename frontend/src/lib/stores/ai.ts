@@ -96,6 +96,11 @@ export function appendChunk(text: string) {
   }));
 }
 
+// Strip <tool-activity> tags from the final message — they're only for live status
+function stripToolActivity(text: string): string {
+  return text.replace(/<tool-activity>.*?<\/tool-activity>/g, "").trim();
+}
+
 export function finishStreaming() {
   ai.update((s) => ({
     ...s,
@@ -103,7 +108,7 @@ export function finishStreaming() {
       ...s.messages,
       {
         role: "assistant" as const,
-        content: s.currentChunks,
+        content: stripToolActivity(s.currentChunks),
         timestamp: Date.now(),
       },
     ],

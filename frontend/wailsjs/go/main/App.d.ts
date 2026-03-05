@@ -95,6 +95,8 @@ export function SaveQuery(arg1:string,arg2:string,arg3:string,arg4:string):Promi
 
 export function ScanCodeContext(arg1:Array<string>):Promise<main.CodeContext>;
 
+export function ScanCodeFull(arg1:Array<string>):Promise<main.CodeContext>;
+
 export function SetAiSettings(arg1:string,arg2:string,arg3:string,arg4:string):Promise<void>;
 
 export function SetCodePaths(arg1:Array<string>):Promise<void>;

@@ -573,6 +573,7 @@ func (a *App) ScanCodeContext(paths []string) (*CodeContext, error) {
 // Files are prioritized: models/schemas first, then services/logic, then everything else.
 // Total content is capped at ~300KB to fit within LLM context windows.
 func (a *App) ScanCodeFull(paths []string) *CodeContext {
+	logger.Info("ScanCodeFull: scanning %d paths: %v", len(paths), paths)
 	result := &CodeContext{Paths: paths}
 
 	// Extensions to include
@@ -591,7 +592,7 @@ func (a *App) ScanCodeFull(paths []string) *CodeContext {
 		".git": true, "node_modules": true, "vendor": true, "__pycache__": true,
 		"dist": true, "build": true, "target": true, ".next": true,
 		"venv": true, ".venv": true, ".tox": true, "coverage": true,
-		".idea": true, ".vscode": true,
+		".idea": true, ".vscode": true, "scripts": true,
 	}
 
 	// Files to skip
@@ -600,6 +601,9 @@ func (a *App) ScanCodeFull(paths []string) *CodeContext {
 		"poetry.lock": true, "Cargo.lock": true, "pnpm-lock.yaml": true,
 		"composer.lock": true, "Gemfile.lock": true,
 	}
+
+	// File prefixes to skip (test files)
+	skipPrefixes := []string{"test_", "spec_", "mock_"}
 
 	type fileEntry struct {
 		relPath  string
@@ -624,6 +628,16 @@ func (a *App) ScanCodeFull(paths []string) *CodeContext {
 
 			name := info.Name()
 			if skipFiles[name] || info.Size() > 50*1024 {
+				return nil
+			}
+			// Skip test files
+			lowerName := strings.ToLower(name)
+			for _, prefix := range skipPrefixes {
+				if strings.HasPrefix(lowerName, prefix) {
+					return nil
+				}
+			}
+			if strings.HasSuffix(lowerName, "_test.go") || strings.HasSuffix(lowerName, "_test.py") || strings.HasSuffix(lowerName, ".test.ts") || strings.HasSuffix(lowerName, ".test.js") || strings.HasSuffix(lowerName, ".spec.ts") || strings.HasSuffix(lowerName, ".spec.js") {
 				return nil
 			}
 
@@ -682,7 +696,7 @@ func (a *App) ScanCodeFull(paths []string) *CodeContext {
 	})
 
 	// Load files up to budget
-	const maxBytes = 300 * 1024 // 300KB
+	const maxBytes = 100 * 1024 // 100KB primer — AI can read more via tool-use
 	var totalBytes int64
 
 	for _, f := range files {
@@ -2553,6 +2567,62 @@ func (a *App) buildSchemaContext() *ai.SchemaContext {
 		Tables:     make(map[string][]ai.SchemaColumn),
 	}
 
+	// Wire up query execution tools for the AI
+	if a.driver != nil {
+		sc.RunQuery = func(ctx context.Context, query string, limit int) ([]string, [][]string, int64, int64, error) {
+			result, err := a.driver.Execute(ctx, query, limit)
+			if err != nil {
+				return nil, nil, 0, 0, err
+			}
+			// Convert rows to string slices
+			rows := make([][]string, len(result.Rows))
+			for i, row := range result.Rows {
+				cells := make([]string, len(row))
+				for j, cell := range row {
+					if cell == nil {
+						cells[j] = "NULL"
+					} else {
+						cells[j] = fmt.Sprintf("%v", cell)
+					}
+				}
+				rows[i] = cells
+			}
+			return result.Columns, rows, result.RowCount, result.DurationMs, nil
+		}
+		sc.DryRun = func(ctx context.Context, query string) (string, error) {
+			dr, err := a.driver.DryRun(ctx, query)
+			if err != nil {
+				return "", err
+			}
+			var sb strings.Builder
+			if dr.Valid {
+				sb.WriteString("Query is valid.\n")
+			} else {
+				sb.WriteString(fmt.Sprintf("Query error: %s\n", dr.Error))
+				return sb.String(), nil
+			}
+			if dr.StatementType != "" {
+				sb.WriteString(fmt.Sprintf("Statement type: %s\n", dr.StatementType))
+			}
+			if dr.EstimatedRows > 0 {
+				sb.WriteString(fmt.Sprintf("Estimated rows: %d\n", dr.EstimatedRows))
+			}
+			if dr.EstimatedBytes > 0 {
+				sb.WriteString(fmt.Sprintf("Estimated bytes: %d (%.2f MB)\n", dr.EstimatedBytes, float64(dr.EstimatedBytes)/1024/1024))
+			}
+			if dr.EstimatedCost > 0 {
+				sb.WriteString(fmt.Sprintf("Estimated cost: $%.4f\n", dr.EstimatedCost))
+			}
+			if len(dr.ReferencedTables) > 0 {
+				sb.WriteString(fmt.Sprintf("Referenced tables: %s\n", strings.Join(dr.ReferencedTables, ", ")))
+			}
+			if len(dr.Warnings) > 0 {
+				sb.WriteString(fmt.Sprintf("Warnings: %s\n", strings.Join(dr.Warnings, "; ")))
+			}
+			return sb.String(), nil
+		}
+	}
+
 	databases, err := a.driver.ListDatabases(a.ctx)
 	if err != nil || len(databases) == 0 {
 		return sc
@@ -2586,9 +2656,14 @@ func (a *App) buildSchemaContext() *ai.SchemaContext {
 	}
 
 	// Include code context from linked repos
+	logger.Info("buildSchemaContext: codePaths=%v", a.codePaths)
 	if len(a.codePaths) > 0 {
-		// Full file loading for deep codebase understanding
+		// Pass code paths so AI providers can use tools to explore the codebase
+		sc.CodePaths = a.codePaths
+
+		// Load a primer of full files (100KB budget) — AI can read more via tools
 		fullCtx := a.ScanCodeFull(a.codePaths)
+		logger.Info("buildSchemaContext: ScanCodeFull returned %d files", len(fullCtx.FullFiles))
 		for _, f := range fullCtx.FullFiles {
 			sc.FullFiles = append(sc.FullFiles, ai.CodeSnippetRef{
 				FilePath: f.FilePath,

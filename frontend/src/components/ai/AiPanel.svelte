@@ -256,6 +256,15 @@
     addTab(query.title, query.sql);
   }
 
+  function extractToolActivity(content: string): { cleanContent: string; activities: string[] } {
+    const activities: string[] = [];
+    const cleanContent = content.replace(/<tool-activity>(.*?)<\/tool-activity>/g, (_match, msg) => {
+      activities.push(msg);
+      return "";
+    });
+    return { cleanContent, activities };
+  }
+
   function formatContent(content: string): { type: "text" | "sql"; value: string }[] {
     const parts: { type: "text" | "sql"; value: string }[] = [];
     const regex = /```sql\s*([\s\S]*?)```/g;
@@ -518,10 +527,10 @@
     {/if}
 
     {#each $ai.messages as msg}
-      <div class="text-sm {msg.role === 'user' ? 'text-text ml-10' : 'text-text mr-2'}">
+      <div class="{msg.role === 'user' ? 'text-text ml-8' : 'text-text mr-2'}">
         {#if msg.role === 'user'}
           <div class="p-3 rounded-xl bg-accent/10 border border-accent/15">
-            <div class="whitespace-pre-wrap">{msg.content}</div>
+            <div class="text-[13px] whitespace-pre-wrap">{msg.content}</div>
           </div>
         {:else}
           <div class="space-y-2">
@@ -539,7 +548,7 @@
                   </button>
                 </div>
               {:else}
-                <div class="whitespace-pre-wrap text-text-dim leading-relaxed px-1">{part.value}</div>
+                <div class="text-[13px] whitespace-pre-wrap text-text/85 leading-relaxed px-1">{part.value}</div>
               {/if}
             {/each}
           </div>
@@ -548,20 +557,26 @@
     {/each}
 
     {#if $ai.streaming}
-      <div class="text-sm mr-2">
+      {@const extracted = extractToolActivity($ai.currentChunks || "")}
+      <div class="mr-2">
         <div class="space-y-2">
-          {#each formatContent($ai.currentChunks || "") as part}
+          {#each formatContent(extracted.cleanContent) as part}
             {#if part.type === 'sql'}
               <div class="text-xs font-mono bg-bg rounded-xl p-4 overflow-x-auto border border-border">
                 <pre class="whitespace-pre-wrap text-text">{part.value}</pre>
               </div>
             {:else}
-              <div class="whitespace-pre-wrap text-text-dim leading-relaxed px-1">{part.value}</div>
+              <div class="text-[13px] whitespace-pre-wrap text-text/85 leading-relaxed px-1">{part.value}</div>
             {/if}
           {/each}
-          {#if !$ai.currentChunks}
-            <div class="flex items-center gap-2 text-text-muted px-1">
-              <div class="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin"></div>
+          {#if extracted.activities.length > 0}
+            <div class="flex items-center gap-2 text-xs text-accent/80 px-1 py-1">
+              <div class="w-3.5 h-3.5 border-2 border-accent border-t-transparent rounded-full animate-spin shrink-0"></div>
+              <span class="truncate">{extracted.activities[extracted.activities.length - 1]}</span>
+            </div>
+          {:else if !extracted.cleanContent.trim()}
+            <div class="flex items-center gap-2 text-xs text-text-muted px-1">
+              <div class="w-3.5 h-3.5 border-2 border-accent border-t-transparent rounded-full animate-spin"></div>
               Thinking...
             </div>
           {/if}
