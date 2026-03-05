@@ -39,7 +39,13 @@
   // Track which tab is running so event handlers can update the right tab
   let runningTabId = "";
 
+  // Keyboard shortcut handlers
+  const onEditorRun = () => handleRun();
+  const onEditorSave = () => openSaveDialog();
+  const onEditorExplain = () => handleExplain();
+
   onMount(() => {
+    // Wails events for async query results
     EventsOn("query:result", (data: any) => {
       if (runningTabId) {
         setTabResult(runningTabId, data);
@@ -57,12 +63,20 @@
       localRunning = false;
       stopTimer();
     });
+
+    // Keyboard shortcuts from Monaco editor
+    document.addEventListener("editor:run", onEditorRun);
+    document.addEventListener("editor:save", onEditorSave);
+    document.addEventListener("editor:explain", onEditorExplain);
   });
 
   onDestroy(() => {
     if (timerInterval) clearInterval(timerInterval);
     EventsOff("query:result");
     EventsOff("query:error");
+    document.removeEventListener("editor:run", onEditorRun);
+    document.removeEventListener("editor:save", onEditorSave);
+    document.removeEventListener("editor:explain", onEditorExplain);
   });
   import {
     execute,
@@ -75,9 +89,35 @@
     optimizeQuery,
     explainQuery,
     saveQuery,
+    aiGenerateSQL,
   } from "../../lib/api";
   import { formatBytes, formatCost } from "../../lib/format";
   import type { OptimizeResult } from "../../lib/types";
+
+  // Ask AI — natural language to SQL
+  let aiPrompt = "";
+  let aiGenerating = false;
+
+  async function handleAiGenerate() {
+    if (!aiPrompt.trim() || aiGenerating) return;
+    aiGenerating = true;
+    try {
+      const sql = await aiGenerateSQL(aiPrompt.trim());
+      if (sql) {
+        const tab = $activeTab;
+        if (tab) updateTabSQL(tab.id, sql);
+      }
+      aiPrompt = "";
+    } catch (e: any) {
+      console.error("AI generate failed:", e);
+    }
+    aiGenerating = false;
+  }
+
+  function handleAiKeydown(e: KeyboardEvent) {
+    if (e.key === "Enter") { e.preventDefault(); handleAiGenerate(); }
+    if (e.key === "Escape") { aiPrompt = ""; (e.target as HTMLInputElement)?.blur(); }
+  }
 
   function handleRun() {
     const tab = $activeTab;
@@ -225,7 +265,7 @@
   function openSaveDialog() {
     const tab = $activeTab;
     if (!tab?.sql?.trim()) return;
-    saveName = tab.name?.startsWith("Query") ? "" : tab.name || "";
+    saveName = tab.title?.startsWith("Query") ? "" : tab.title || "";
     showSaveDialog = true;
     // Focus input after render
     setTimeout(() => {
@@ -352,10 +392,25 @@
       class="px-3 py-2 text-sm text-text-dim rounded-lg hover:bg-surface-hover hover:text-text font-medium disabled:opacity-50"
       on:click={openSaveDialog}
       disabled={!$activeTab?.sql?.trim()}
-      title="Save this query"
+      title="Save this query (Cmd+S)"
     >
       Save
     </button>
+
+    <!-- Ask AI — natural language to SQL -->
+    <div class="flex items-center gap-1.5 ml-2">
+      <input
+        type="text"
+        class="w-48 px-3 py-1.5 text-xs rounded-lg bg-bg border border-border outline-none focus:border-accent focus:w-72 transition-all placeholder:text-text-muted"
+        placeholder="Ask AI to write SQL..."
+        bind:value={aiPrompt}
+        on:keydown={handleAiKeydown}
+        disabled={aiGenerating}
+      />
+      {#if aiGenerating}
+        <div class="w-3 h-3 border-2 border-accent border-t-transparent rounded-full animate-spin"></div>
+      {/if}
+    </div>
 
     <div class="flex-1"></div>
 

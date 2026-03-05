@@ -264,6 +264,11 @@ export async function aiChat(
   return app.AiChat(message, conversationID, editorContext);
 }
 
+export async function aiGenerateSQL(prompt: string): Promise<string> {
+  const app = await getApp();
+  return app.AiGenerateSQL(prompt);
+}
+
 export async function getAiProviders(): Promise<ProviderInfo[]> {
   const app = await getApp();
   return app.GetAiProviders();

@@ -22,7 +22,7 @@
     getAiSettings,
     setAiSettings,
   } from "../../lib/api";
-  import { addTab, activeTab, setTabResult, setTabDryRun } from "../../lib/stores/editor";
+  import { addTab, activeTab, editor, setTabResult, setTabDryRun } from "../../lib/stores/editor";
   import { formatBytes, formatCost, formatDuration, formatNumber } from "../../lib/format";
   import type { ChatMessage, ProviderInfo } from "../../lib/types";
 
@@ -177,63 +177,67 @@
     return key.slice(0, 4) + "..." + key.slice(-4);
   }
 
-  function buildEditorContext(): string {
-    const tab = $activeTab;
-    if (!tab) return "";
-
+  function buildTabContext(tab: any, label: string): string[] {
     const parts: string[] = [];
 
     if (tab.sql?.trim()) {
-      parts.push(`Current SQL in editor:\n\`\`\`sql\n${tab.sql}\n\`\`\``);
+      parts.push(`${label} SQL:\n\`\`\`sql\n${tab.sql}\n\`\`\``);
     }
-
-    if (tab.running) {
-      parts.push("Status: Query is currently running...");
-    }
-
-    if (tab.error) {
-      parts.push(`Query error: ${tab.error}`);
-    }
+    if (tab.running) parts.push(`${label} Status: running...`);
+    if (tab.error) parts.push(`${label} Error: ${tab.error}`);
 
     if (tab.result) {
       const r = tab.result;
-      let stats = `Query results: ${formatNumber(r.row_count)} rows returned`;
-      if (r.duration_ms) stats += `, took ${formatDuration(r.duration_ms)}`;
-      if (r.bytes_processed != null) stats += `, scanned ${formatBytes(r.bytes_processed)}`;
-      if (r.cost_usd != null) stats += `, cost ${formatCost(r.cost_usd)}`;
-      if (r.cache_hit) stats += " (cache hit)";
+      let stats = `${label} Results: ${formatNumber(r.row_count)} rows`;
+      if (r.duration_ms) stats += `, ${formatDuration(r.duration_ms)}`;
+      if (r.bytes_processed != null) stats += `, ${formatBytes(r.bytes_processed)}`;
+      if (r.cost_usd != null) stats += `, ${formatCost(r.cost_usd)}`;
+      if (r.cache_hit) stats += " (cached)";
       parts.push(stats);
 
-      if (r.columns?.length > 0) {
-        parts.push(`Result columns: ${r.columns.join(", ")}`);
-      }
+      if (r.columns?.length > 0) parts.push(`Columns: ${r.columns.join(", ")}`);
 
-      // Include first few rows as sample data
       if (r.rows?.length > 0) {
-        const sampleRows = r.rows.slice(0, 5);
-        const preview = sampleRows.map(row =>
-          r.columns.map((col, i) => `${col}=${row[i]}`).join(", ")
+        const sampleRows = r.rows.slice(0, label.startsWith("[Active") ? 10 : 3);
+        const preview = sampleRows.map((row: any[]) =>
+          r.columns.map((col: string, i: number) => `${col}=${row[i]}`).join(", ")
         ).join("\n");
-        parts.push(`Sample data (first ${sampleRows.length} of ${r.row_count} rows):\n${preview}`);
+        parts.push(`Sample (${sampleRows.length} of ${r.row_count} rows):\n${preview}`);
       }
     }
 
-    if (tab.dryRun) {
+    if (tab.dryRun?.valid) {
       const d = tab.dryRun;
-      if (d.valid) {
-        let dryInfo = "Dry run:";
-        if (d.statement_type) dryInfo += ` ${d.statement_type}`;
-        if (d.estimated_rows > 0) dryInfo += `, ~${d.estimated_rows.toLocaleString()} rows`;
-        if (d.estimated_bytes > 0) dryInfo += `, ${formatBytes(d.estimated_bytes)}`;
-        if (d.estimated_cost_usd > 0) dryInfo += `, ${formatCost(d.estimated_cost_usd)}`;
-        if (d.referenced_tables?.length) dryInfo += `, tables: ${d.referenced_tables.join(", ")}`;
-        parts.push(dryInfo);
-      } else if (d.error) {
-        parts.push(`Dry run error: ${d.error}`);
-      }
+      let dryInfo = "Dry run:";
+      if (d.statement_type) dryInfo += ` ${d.statement_type}`;
+      if (d.estimated_rows > 0) dryInfo += `, ~${d.estimated_rows.toLocaleString()} rows`;
+      if (d.estimated_bytes > 0) dryInfo += `, ${formatBytes(d.estimated_bytes)}`;
+      if (d.estimated_cost_usd > 0) dryInfo += `, ${formatCost(d.estimated_cost_usd)}`;
+      parts.push(dryInfo);
     }
 
-    return parts.join("\n\n");
+    return parts;
+  }
+
+  function buildEditorContext(): string {
+    const allTabs = $editor.tabs;
+    const active = $activeTab;
+    if (!active) return "";
+
+    const sections: string[] = [];
+
+    // Active tab gets full context
+    const activeParts = buildTabContext(active, `[Active tab: "${active.title}"]`);
+    if (activeParts.length > 0) sections.push(activeParts.join("\n"));
+
+    // Other tabs get summary context (SQL + brief results)
+    for (const tab of allTabs) {
+      if (tab.id === active.id || !tab.sql?.trim()) continue;
+      const otherParts = buildTabContext(tab, `[Tab: "${tab.title}"]`);
+      if (otherParts.length > 0) sections.push(otherParts.join("\n"));
+    }
+
+    return sections.join("\n\n---\n\n");
   }
 
   async function handleSend() {

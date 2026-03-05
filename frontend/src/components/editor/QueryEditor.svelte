@@ -149,10 +149,31 @@
         monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
       ],
       run: () => {
-        // Dispatch a custom event that the Toolbar listens for
-        container.dispatchEvent(
-          new CustomEvent("run-query", { bubbles: true })
-        );
+        document.dispatchEvent(new CustomEvent("editor:run"));
+      },
+    });
+
+    // Ctrl/Cmd+S to save query
+    monacoEditor.addAction({
+      id: "save-query",
+      label: "Save Query",
+      keybindings: [
+        monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS,
+      ],
+      run: () => {
+        document.dispatchEvent(new CustomEvent("editor:save"));
+      },
+    });
+
+    // Ctrl/Cmd+E to explain query
+    monacoEditor.addAction({
+      id: "explain-query",
+      label: "Explain Query",
+      keybindings: [
+        monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyE,
+      ],
+      run: () => {
+        document.dispatchEvent(new CustomEvent("editor:explain"));
       },
     });
 

@@ -1745,6 +1745,35 @@ func isRateLimited(err error) bool {
 		strings.Contains(msg, "too many requests")
 }
 
+// AiGenerateSQL takes a natural language prompt and returns SQL using the AI provider.
+func (a *App) AiGenerateSQL(prompt string) (string, error) {
+	if a.aiProv == nil || !a.aiProv.IsConfigured() {
+		return "", fmt.Errorf("AI provider not configured")
+	}
+	if a.driver == nil {
+		return "", fmt.Errorf("not connected to a database")
+	}
+
+	schema := a.buildSchemaContext()
+	model, _ := a.store.GetSetting("ai_model")
+
+	messages := []ai.Message{
+		{Role: "user", Content: prompt + "\n\nRespond with ONLY the SQL query. No explanation, no markdown, no code fences."},
+	}
+
+	result, err := a.aiProv.Complete(a.ctx, messages, schema, model)
+	if err != nil {
+		return "", err
+	}
+
+	// Strip any markdown code fences if the model included them anyway
+	result = strings.TrimSpace(result)
+	result = strings.TrimPrefix(result, "```sql")
+	result = strings.TrimPrefix(result, "```")
+	result = strings.TrimSuffix(result, "```")
+	return strings.TrimSpace(result), nil
+}
+
 // stripToolActivity removes <tool-activity>...</tool-activity> tags from AI responses.
 var toolActivityRe = regexp.MustCompile(`<tool-activity>.*?</tool-activity>`)
 

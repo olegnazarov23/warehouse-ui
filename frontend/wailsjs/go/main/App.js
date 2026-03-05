@@ -6,6 +6,10 @@ export function AiChat(arg1, arg2, arg3) {
   return window['go']['main']['App']['AiChat'](arg1, arg2, arg3);
 }
 
+export function AiGenerateSQL(arg1) {
+  return window['go']['main']['App']['AiGenerateSQL'](arg1);
+}
+
 export function CancelQuery() {
   return window['go']['main']['App']['CancelQuery']();
 }

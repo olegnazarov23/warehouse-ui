@@ -4,6 +4,7 @@
   import ConnectionPage from "./components/connect/ConnectionPage.svelte";
   import { connectionStatus, isConnected } from "./lib/stores/connection";
   import { clearChat, ai, setConversations, setActiveConversation } from "./lib/stores/ai";
+  import { saveTabs, restoreTabs, resetTabs } from "./lib/stores/editor";
   import { getConnectionStatus, listAiConversations, getAiMessages } from "./lib/api";
   import type { ChatMessage } from "./lib/types";
 
@@ -13,11 +14,22 @@
   // Reload AI conversations when switching connections
   connectionStatus.subscribe((status) => {
     if (status.connected && status.id && status.id !== lastConnectionId) {
+      // Save tabs from previous connection before switching
+      if (lastConnectionId) {
+        saveTabs(lastConnectionId);
+      }
       lastConnectionId = status.id;
+      // Restore tabs for the new connection, or reset if none saved
+      restoreTabs(status.id);
       // Reload conversations for the new connection
       loadConversationsForConnection();
     } else if (!status.connected) {
+      // Save tabs before disconnecting
+      if (lastConnectionId) {
+        saveTabs(lastConnectionId);
+      }
       lastConnectionId = "";
+      resetTabs();
     }
   });
 
